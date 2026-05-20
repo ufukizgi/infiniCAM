@@ -1,4 +1,5 @@
-const BASE = '/api';
+// Use Vite's base URL (e.g., /cam/) to construct the API path dynamically
+const BASE = import.meta.env.BASE_URL === '/' ? '/api' : `${import.meta.env.BASE_URL}api`;
 
 function getToken() {
   return localStorage.getItem('infinicam_token');
