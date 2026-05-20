@@ -1,0 +1,37 @@
+version: '3.8'
+
+services:
+  # Node.js API Server
+  infinicam-server:
+    build: 
+      context: ./server
+      dockerfile: Dockerfile
+    container_name: infinicam-server
+    restart: unless-stopped
+    ports:
+      - "3001:3001"
+    environment:
+      - NODE_ENV=production
+      - JWT_SECRET=change_this_to_a_secure_random_string_in_production
+      # - CAM_ENGINE_URL=http://infinicam-engine:8000 # If we want to connect internally
+    volumes:
+      - ./server/data:/app/data
+      - ./storage:/storage
+    networks:
+      - proxy_network
+
+  # Python CAM Engine
+  infinicam-engine:
+    build:
+      context: ./cam-engine
+      dockerfile: Dockerfile
+    container_name: infinicam-engine
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    networks:
+      - proxy_network
+
+networks:
+  proxy_network:
+    external: true
