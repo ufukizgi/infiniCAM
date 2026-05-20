@@ -224,6 +224,9 @@ def analyze_step(request: AnalyzeRequest):
         }
         svg_str = cq.exporters.getSVG(solid, opts=svg_opts)
                 
+        # Sort features by X coordinate ascending
+        unique_features.sort(key=lambda f: f['position'][0])
+
         return {
             "success": True,
             "extrusion_axis": {

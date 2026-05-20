@@ -119,6 +119,8 @@ export async function renderEditor(container, partId) {
   });
 
   // Bug modal logic
+  window.infinicam_bugs = {};
+  
   const bugModal = document.getElementById('bug-modal');
   document.getElementById('bug-close-btn').addEventListener('click', () => {
     bugModal.style.display = 'none';
@@ -132,15 +134,49 @@ export async function renderEditor(container, partId) {
     bugModal.style.display = 'none';
   });
   
-  window.openBugReportModal = (index) => {
+  window.toggleBugState = (index, isBug) => {
+    window.infinicam_bugs[index] = isBug;
+    
+    // Update button styles for this row
+    const btnOk = document.getElementById(`btn-ok-${index}`);
+    const btnBug = document.getElementById(`btn-bug-${index}`);
+    
+    if (isBug) {
+      btnBug.style.background = 'var(--danger)';
+      btnBug.style.color = '#fff';
+      btnOk.style.background = 'transparent';
+      btnOk.style.color = 'var(--success)';
+    } else {
+      btnOk.style.background = 'var(--success)';
+      btnOk.style.color = '#fff';
+      btnBug.style.background = 'transparent';
+      btnBug.style.color = 'var(--danger)';
+    }
+    
+    // Check if report button should be visible
+    const hasBugs = Object.values(window.infinicam_bugs).includes(true);
+    const reportBtn = document.getElementById('generate-report-btn');
+    if (reportBtn) {
+      reportBtn.style.display = hasBugs ? 'block' : 'none';
+    }
+  };
+  
+  window.generateBugReport = () => {
     if (!part || !window.infinicam_features) return;
-    const feat = window.infinicam_features[index];
+    
+    const buggyFeatures = [];
+    Object.keys(window.infinicam_bugs).forEach(idx => {
+      if (window.infinicam_bugs[idx]) {
+        buggyFeatures.push(window.infinicam_features[idx]);
+      }
+    });
     
     const debugData = {
       filename: part.originalFilename,
       extrusionAxis: window.infinicam_axis || 'Unknown',
       dimensions: part.dimensions || {},
-      feature: feat
+      incorrectFeaturesCount: buggyFeatures.length,
+      incorrectFeatures: buggyFeatures
     };
     
     document.getElementById('bug-note').value = '';
@@ -232,6 +268,7 @@ export async function renderEditor(container, partId) {
       window.infinicam_svg = data.cross_section_svg;
       window.infinicam_features = features; // Store globally for highlighting
       window.infinicam_axis = axisInfo; // Store for bug report
+      window.infinicam_bugs = {}; // Reset bugs
       
       // Force re-render of active tab to show SVG
       if (typeof renderTabContent === 'function') renderTabContent();
@@ -280,8 +317,8 @@ export async function renderEditor(container, partId) {
                   <span style="font-weight:600; font-size:0.85rem; text-transform:capitalize;">${feat.type.replace('_', ' ')} OP ${i+1}</span>
                 </div>
                 <div class="flex items-center gap-1">
-                  <button class="btn btn-icon" style="padding:2px 6px; font-size:0.75rem; background:transparent; color:var(--success); border:1px solid var(--success);" onclick="this.style.background='var(--success)'; this.style.color='#fff';" title="Mark as Correct">✔</button>
-                  <button class="btn btn-icon" style="padding:2px 6px; font-size:0.75rem; background:transparent; color:var(--danger); border:1px solid var(--danger);" onclick="window.openBugReportModal(${i})" title="Report Incorrect">❌</button>
+                  <button id="btn-ok-${i}" class="btn btn-icon" style="padding:2px 6px; font-size:0.75rem; background:transparent; color:var(--success); border:1px solid var(--success); transition:all 0.2s;" onclick="window.toggleBugState(${i}, false)" title="Mark as Correct">✔</button>
+                  <button id="btn-bug-${i}" class="btn btn-icon" style="padding:2px 6px; font-size:0.75rem; background:transparent; color:var(--danger); border:1px solid var(--danger); transition:all 0.2s;" onclick="window.toggleBugState(${i}, true)" title="Report Incorrect">❌</button>
                 </div>
               </div>
               <div style="font-family:var(--font-mono); font-size:0.75rem; color:var(--text-muted); cursor:pointer;" onclick="if(window.viewer) window.viewer.highlightFeature(window.infinicam_features[${i}])">
@@ -293,6 +330,13 @@ export async function renderEditor(container, partId) {
             </div>
           `;
         });
+        
+        opsHtml += `
+          <button id="generate-report-btn" class="btn btn-danger" style="display:none; width:100%; margin-top:16px;" onclick="window.generateBugReport()">
+            📋 Generate Error Report
+          </button>
+        `;
+        
         opsHtml += '</div>';
       }
       
