@@ -1,0 +1,242 @@
+from fastapi import FastAPI, HTTPException, Body
+from pydantic import BaseModel
+import cadquery as cq
+import os
+
+app = FastAPI(title="infiniCAM Feature Recognition Engine")
+
+class AnalyzeRequest(BaseModel):
+    file_path: str
+
+@app.post("/analyze")
+def analyze_step(request: AnalyzeRequest):
+    if not os.path.exists(request.file_path):
+        raise HTTPException(status_code=404, detail="STEP file not found")
+
+    try:
+        # 1. Load the STEP file
+        part = cq.importers.importStep(request.file_path)
+        solid = part.val()
+        
+        # 2. Extract linear edges to detect the extrusion axis
+        edges = solid.Edges()
+        lines = [e for e in edges if e.geomType() == "LINE"]
+        
+        if not lines:
+            return {"error": "No linear edges found. Not a standard extrusion."}
+            
+        # Group by direction vector (ignoring sign)
+        direction_lengths = {}
+        for line in lines:
+            # We need the tangent vector of the line
+            start = line.startPoint()
+            end = line.endPoint()
+            
+            # Vector from start to end
+            dx = round(end.x - start.x, 3)
+            dy = round(end.y - start.y, 3)
+            dz = round(end.z - start.z, 3)
+            
+            # Normalize vector (handling sign so [1,0,0] and [-1,0,0] go to the same bucket)
+            length = (dx**2 + dy**2 + dz**2)**0.5
+            if length == 0: continue
+            
+            # Create a uniform key for the direction
+            nx = dx / length
+            ny = dy / length
+            nz = dz / length
+            
+            # Force positive primary direction for bucket key
+            if nx < 0 or (nx == 0 and ny < 0) or (nx == 0 and ny == 0 and nz < 0):
+                nx, ny, nz = -nx, -ny, -nz
+                
+            key = f"{nx:.3f},{ny:.3f},{nz:.3f}"
+            direction_lengths[key] = direction_lengths.get(key, 0) + length
+            
+        # The extrusion axis is the direction with the maximum total length
+        extrusion_axis_str = max(direction_lengths.items(), key=lambda x: x[1])[0]
+        extrusion_axis = [float(x) for x in extrusion_axis_str.split(',')]
+        
+        # Determine X, Y, or Z axis mapping for clarity
+        axis_name = "Unknown"
+        if abs(extrusion_axis[0]) > 0.99: axis_name = "X"
+        elif abs(extrusion_axis[1]) > 0.99: axis_name = "Y"
+        elif abs(extrusion_axis[2]) > 0.99: axis_name = "Z"
+
+        # 3. Fast Feature Recognition (B-Rep Topology Analysis)
+        features = []
+        
+        # Map edges to faces for topology analysis
+        edge_to_faces = {}
+        for f in solid.Faces():
+            for e in f.Edges():
+                ekey = e.hashCode()
+                if ekey not in edge_to_faces: edge_to_faces[ekey] = []
+                edge_to_faces[ekey].append(f)
+                
+        # 3.1 Detect Drilled Holes and Slots
+        cylinders = [f for f in solid.Faces() if f.geomType() == "CYLINDER"]
+        cyl_groups = {}
+        slot_wall_faces = set()
+        
+        idx_counter = 0
+        
+        for cyl in cylinders:
+            surf = cyl._geomAdaptor().Cylinder()
+            axis = surf.Axis().Direction()
+            dir_vec = [axis.X(), axis.Y(), axis.Z()]
+            dot_product = abs(sum(dir_vec[i] * extrusion_axis[i] for i in range(3)))
+            
+            if dot_product < 0.99:
+                loc = surf.Location() # True axis location
+                r = round(surf.Radius(), 3)
+                
+                # Normalize direction
+                dx, dy, dz = dir_vec
+                if dx < 0 or (dx == 0 and dy < 0) or (dx == 0 and dy == 0 and dz < 0):
+                    dx, dy, dz = -dx, -dy, -dz
+                    
+                # Check what straight edges are connected to
+                straight_edges = [e for e in cyl.Edges() if e.geomType() in ["LINE", "BSPLINE"]]
+                is_slot_end = False
+                for e in straight_edges:
+                    faces = edge_to_faces.get(e.hashCode(), [])
+                    for f2 in faces:
+                        if f2 != cyl and f2.geomType() == "PLANE":
+                            is_slot_end = True
+                            slot_wall_faces.add(f2.hashCode())
+                
+                if is_slot_end:
+                    key = f"{r}_{dx:.2f}_{dy:.2f}_{dz:.2f}"
+                    if key not in cyl_groups: cyl_groups[key] = []
+                    
+                    pos = (round(loc.X(), 3), round(loc.Y(), 3), round(loc.Z(), 3))
+                    if pos not in cyl_groups[key]:
+                        cyl_groups[key].append(pos)
+                else:
+                    # It's a full hole (or 180deg half-hole connected to another half-hole)
+                    pos = (round(loc.X(), 3), round(loc.Y(), 3), round(loc.Z(), 3))
+                    # Prevent duplicate half-holes
+                    if not any(f['type'] == 'drill' and f['position'] == pos for f in features):
+                        features.append({
+                            "id": f"drill_{idx_counter}",
+                            "type": "drill",
+                            "radius": r,
+                            "depth": 10.0,
+                            "position": pos,
+                            "vector": [dx, dy, dz]
+                        })
+                        idx_counter += 1
+                    
+        import math
+        for key, positions in cyl_groups.items():
+            radius = float(key.split('_')[0])
+            dx, dy, dz = [float(x) for x in key.split('_')[1:]]
+            
+            # Pair positions to find slots
+            while len(positions) >= 2:
+                p1 = positions.pop(0)
+                p2 = None
+                min_dist = 999999
+                for p in positions:
+                    d = math.dist(p1, p)
+                    if d < min_dist:
+                        min_dist = d
+                        p2 = p
+                
+                if p2 and min_dist < 200: # Found a slot
+                    positions.remove(p2)
+                    center_pos = [(p1[0]+p2[0])/2, (p1[1]+p2[1])/2, (p1[2]+p2[2])/2]
+                    features.append({
+                        "id": f"slot_{idx_counter}",
+                        "type": "slot",
+                        "radius": radius,
+                        "width": radius * 2,
+                        "length": min_dist + (radius * 2), # Total length
+                        "travel": min_dist,
+                        "depth": 10.0,
+                        "position": [round(c, 3) for c in center_pos],
+                        "p1": p1,
+                        "p2": p2,
+                        "vector": [dx, dy, dz]
+                    })
+                    idx_counter += 1
+                else:
+                    # Lonely slot ends? Fallback to drill
+                    if not any(f['type'] == 'drill' and f['position'] == p1 for f in features):
+                        features.append({
+                            "id": f"drill_{idx_counter}",
+                            "type": "drill",
+                            "radius": radius,
+                            "depth": 10.0,
+                            "position": p1,
+                            "vector": [dx, dy, dz]
+                        })
+                        idx_counter += 1
+                    break
+
+        # 3.2 Detect End Cuts (Flat and Angled Saw Cuts)
+        planes = [f for f in solid.Faces() if f.geomType() == "PLANE"]
+        for idx, p in enumerate(planes):
+            if p.hashCode() in slot_wall_faces:
+                continue # Ignore slot walls
+                
+            loc = p.Center()
+            # normalAt might fail on some complex trimmed faces, but usually works for planes
+            try:
+                normal = p.normalAt(loc)
+            except:
+                continue
+                
+            n_vec = [normal.x, normal.y, normal.z]
+            dot_product = abs(sum(n_vec[i] * extrusion_axis[i] for i in range(3)))
+            
+            # If normal is perpendicular (dot ~ 0), it's a side wall.
+            # If dot > 0.01, it's a cut.
+            if dot_product > 0.01:
+                feat_type = "cut_angled" if dot_product < 0.99 else "cut_flat"
+                area = p.Area()
+                if area > 10.0: # Skip micro-chamfers
+                    features.append({
+                        "id": f"plane_{idx}",
+                        "type": feat_type,
+                        "area": round(area, 1),
+                        "position": [round(loc.x, 2), round(loc.y, 2), round(loc.z, 2)],
+                        "vector": [round(n_vec[0], 2), round(n_vec[1], 2), round(n_vec[2], 2)]
+                    })
+
+        # Filter duplicate features (not needed since we already unique'd in grouping, but safe for cuts)
+        unique_features = []
+        seen_locs = set()
+        for f in features:
+            loc_key = f"{f['type']}_{f['position'][0]:.1f},{f['position'][1]:.1f},{f['position'][2]:.1f}"
+            if loc_key not in seen_locs:
+                seen_locs.add(loc_key)
+                unique_features.append(f)
+                
+        # 4. Generate SVG Cross Section
+        svg_opts = {
+            "projectionDir": tuple(extrusion_axis),
+            "showAxes": False,
+            "showHidden": False,
+            "strokeWidth": 1.5,
+            "strokeColor": (255, 255, 255)
+        }
+        svg_str = cq.exporters.getSVG(solid, opts=svg_opts)
+                
+        return {
+            "success": True,
+            "extrusion_axis": {
+                "name": axis_name,
+                "vector": extrusion_axis
+            },
+            "features": unique_features,
+            "cross_section_svg": svg_str
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8000)

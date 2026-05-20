@@ -1,0 +1,39 @@
+{
+  "name": "Machine Name",
+  "controller": "Fanuc 31i",
+  "dialect": "fanuc",
+  "units": "mm",
+  "linear_axes": ["X", "Y", "Z"],
+  "rotary_axes": [
+    { "name": "A", "center": "X", "range": [-120, 120] },
+    { "name": "C", "center": "Z", "range": [-360, 360] }
+  ],
+  "secondary_heads": [],
+  "fixture_axes": [
+    { "name": "U1", "travel_axis": "X", "range": [0, 6000], "safe_zone": 80 },
+    { "name": "U2", "travel_axis": "X", "range": [0, 6000], "safe_zone": 80 }
+  ],
+  "constraints": {
+    "min_fixture_distance": 150,
+    "tool_clearance": 20,
+    "forbidden_zones": []
+  },
+  "tool_change": {
+    "command": "T{tool_number} M6",
+    "position": { "X": 0, "Y": 0, "Z": 200 }
+  },
+  "fixture_command_format": "G0 {axis}={position}",
+  "custom_codes": {
+    "program_start": ["G90 G94", "G17", "G21"],
+    "program_end":   ["M9", "M5", "M30"],
+    "spindle_on":    "M3 S{speed}",
+    "coolant_on":    "M8",
+    "coolant_off":   "M9"
+  },
+  "tools": [
+    { "number": 1,  "type": "endmill",  "diameter": 8,    "flutes": 4, "notes": "" },
+    { "number": 5,  "type": "drill",    "diameter": 6.8,  "notes": "M8 için" },
+    { "number": 6,  "type": "tap",      "diameter": 8,    "pitch": 1.25 },
+    { "number": 10, "type": "saw",      "diameter": 125,  "width": 3 }
+  ]
+}

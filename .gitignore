@@ -1,0 +1,7 @@
+node_modules/
+venv/
+*.stp
+*.step
+__pycache__/
+.env
+data/*.db
