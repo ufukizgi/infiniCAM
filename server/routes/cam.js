@@ -55,7 +55,8 @@ router.post('/:partId/analyze', async (req, res) => {
     }
 
     // Call Python CAM Engine
-    const response = await fetch('http://localhost:8000/analyze', {
+    const engineUrl = process.env.CAM_ENGINE_URL || 'http://localhost:8000';
+    const response = await fetch(`${engineUrl}/analyze`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ file_path: filePath })

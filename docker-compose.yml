@@ -13,7 +13,7 @@ services:
     environment:
       - NODE_ENV=production
       - JWT_SECRET=change_this_to_a_secure_random_string_in_production
-      # - CAM_ENGINE_URL=http://infinicam-engine:8000 # If we want to connect internally
+      - CAM_ENGINE_URL=http://infinicam-engine:8000
     volumes:
       - ./server/data:/app/data
       - ./storage:/storage
