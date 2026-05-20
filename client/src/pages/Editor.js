@@ -80,13 +80,10 @@ export async function renderEditor(container, partId) {
       <div id="bug-modal" class="modal-overlay" style="display:none; position:fixed; top:0; left:0; right:0; bottom:0; background:rgba(0,0,0,0.5); z-index:100; align-items:center; justify-content:center;">
         <div class="modal-content" style="background:var(--bg-1); width:500px; border-radius:var(--r-lg); padding:24px; box-shadow:0 10px 30px rgba(0,0,0,0.5); border:1px solid var(--border);">
           <h3 style="margin-bottom:12px; font-size:1.1rem; color:var(--danger);">Report Incorrect Feature</h3>
-          <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:12px;">Copy the details below and send them to the AI for debugging.</p>
-          
-          <div class="sidebar-label mb-1">User Note (Optional)</div>
-          <input type="text" id="bug-note" class="input" placeholder="e.g. This should be a slot, not a drill" style="margin-bottom:16px;" />
+          <p style="font-size:0.8rem; color:var(--text-muted); margin-bottom:16px;">Copy the details below and send them to the AI for debugging.</p>
           
           <div class="sidebar-label mb-1">Debug Data</div>
-          <textarea id="bug-data" class="input" style="height:150px; font-family:var(--font-mono); font-size:0.75rem; resize:vertical;" readonly></textarea>
+          <textarea id="bug-data" class="input" style="height:250px; font-family:var(--font-mono); font-size:0.75rem; resize:vertical;" readonly></textarea>
           
           <div class="flex justify-end gap-2 mt-4">
             <button class="btn btn-secondary" id="bug-close-btn">Cancel</button>
@@ -127,9 +124,7 @@ export async function renderEditor(container, partId) {
   });
   document.getElementById('bug-copy-btn').addEventListener('click', () => {
     const dataField = document.getElementById('bug-data');
-    const noteField = document.getElementById('bug-note');
-    const textToCopy = `User Note: ${noteField.value || 'None'}\n\n${dataField.value}`;
-    navigator.clipboard.writeText(textToCopy);
+    navigator.clipboard.writeText(dataField.value);
     toast.success('Bug report copied to clipboard!');
     bugModal.style.display = 'none';
   });
@@ -140,17 +135,20 @@ export async function renderEditor(container, partId) {
     // Update button styles for this row
     const btnOk = document.getElementById(`btn-ok-${index}`);
     const btnBug = document.getElementById(`btn-bug-${index}`);
+    const noteContainer = document.getElementById(`bug-note-container-${index}`);
     
     if (isBug) {
       btnBug.style.background = 'var(--danger)';
       btnBug.style.color = '#fff';
       btnOk.style.background = 'transparent';
       btnOk.style.color = 'var(--success)';
+      noteContainer.style.display = 'block';
     } else {
       btnOk.style.background = 'var(--success)';
       btnOk.style.color = '#fff';
       btnBug.style.background = 'transparent';
       btnBug.style.color = 'var(--danger)';
+      noteContainer.style.display = 'none';
     }
     
     // Check if report button should be visible
@@ -167,7 +165,10 @@ export async function renderEditor(container, partId) {
     const buggyFeatures = [];
     Object.keys(window.infinicam_bugs).forEach(idx => {
       if (window.infinicam_bugs[idx]) {
-        buggyFeatures.push(window.infinicam_features[idx]);
+        const feat = JSON.parse(JSON.stringify(window.infinicam_features[idx]));
+        const noteInput = document.getElementById(`bug-note-input-${idx}`);
+        feat.userNote = noteInput ? noteInput.value : '';
+        buggyFeatures.push(feat);
       }
     });
     
@@ -179,7 +180,6 @@ export async function renderEditor(container, partId) {
       incorrectFeatures: buggyFeatures
     };
     
-    document.getElementById('bug-note').value = '';
     document.getElementById('bug-data').value = JSON.stringify(debugData, null, 2);
     bugModal.style.display = 'flex';
   };
@@ -326,6 +326,9 @@ export async function renderEditor(container, partId) {
               </div>
               <div style="font-family:var(--font-mono); font-size:0.7rem; color:var(--text-3); margin-top:4px;">
                 Pos: [${feat.position.join(', ')}]
+              </div>
+              <div id="bug-note-container-${i}" style="display:none; margin-top:8px;">
+                <input type="text" id="bug-note-input-${i}" class="input" placeholder="Type a note (e.g., this is a slot)" style="font-size:0.75rem; padding:4px 8px; width:100%;" />
               </div>
             </div>
           `;
