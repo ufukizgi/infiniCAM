@@ -22,13 +22,16 @@ app.use(express.json({ limit: '10mb' }));
 app.use('/storage', express.static(path.join(__dirname, '../storage')));
 
 // API Routes
-app.use('/api/auth', authRoutes);
-app.use('/api/parts', libraryRoutes);
-app.use('/api/cam', camRoutes);
-
-// Health check
-app.get('/api/health', (req, res) => {
-  res.json({ status: 'ok', name: 'infiniCAM', version: '1.0.0' });
+const apiPaths = ['/api', '/cam/api'];
+apiPaths.forEach(apiPath => {
+  app.use(`${apiPath}/auth`, authRoutes);
+  app.use(`${apiPath}/parts`, libraryRoutes);
+  app.use(`${apiPath}/cam`, camRoutes);
+  
+  // Health check
+  app.get(`${apiPath}/health`, (req, res) => {
+    res.json({ status: 'ok', name: 'infiniCAM', version: '1.0.0' });
+  });
 });
 
 // 404 handler
