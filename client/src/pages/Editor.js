@@ -249,16 +249,7 @@ export async function renderEditor(container, partId) {
     btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;"></span> Analyzing...';
     
     try {
-      const res = await fetch(`/api/cam/${partId}/analyze`, {
-        method: 'POST',
-        headers: {
-          'Authorization': `Bearer ${localStorage.getItem('infinicam_token')}`
-        }
-      });
-      
-      const data = await res.json();
-      
-      if (!res.ok) throw new Error(data.error || 'Analysis failed');
+      const data = await api.analyze(partId);
       
       toast.success('Feature recognition complete');
       
