@@ -79,6 +79,13 @@ router.post('/:partId/analyze', async (req, res) => {
     };
     fs.writeFileSync(camJsonPath, JSON.stringify(annotations, null, 2));
 
+    // Save SVG as thumbnail
+    if (result.cross_section_svg) {
+      storage.saveFile(req.userId, req.params.partId, 'thumbnail.svg', Buffer.from(result.cross_section_svg));
+      db.prepare("UPDATE parts SET has_thumbnail = 2, updated_at = datetime('now') WHERE id = ?")
+        .run(req.params.partId);
+    }
+
     res.json({
       status: 'success',
       extrusion_axis: result.extrusion_axis,

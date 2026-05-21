@@ -32,7 +32,7 @@ router.get('/', (req, res) => {
       uploadedAt: p.uploaded_at,
       updatedAt: p.updated_at,
       thumbnailUrl: p.has_thumbnail
-        ? storage.getPublicPath(req.userId, p.id, 'thumbnail.png')
+        ? storage.getPublicPath(req.userId, p.id, p.has_thumbnail === 2 ? 'thumbnail.svg' : 'thumbnail.png')
         : null,
     }));
 
@@ -67,7 +67,7 @@ router.get('/:id', (req, res) => {
       uploadedAt: part.uploaded_at,
       updatedAt: part.updated_at,
       thumbnailUrl: part.has_thumbnail
-        ? storage.getPublicPath(req.userId, part.id, 'thumbnail.png')
+        ? storage.getPublicPath(req.userId, part.id, part.has_thumbnail === 2 ? 'thumbnail.svg' : 'thumbnail.png')
         : null,
     });
   } catch (err) {
@@ -128,7 +128,8 @@ router.put('/:id/thumbnail', uploadThumbnail.single('thumbnail'), (req, res) => 
     if (!req.file) return res.status(400).json({ error: 'No thumbnail provided' });
 
     storage.saveFile(req.userId, req.params.id, 'thumbnail.png', req.file.buffer);
-    db.prepare('UPDATE parts SET has_thumbnail = 1, updated_at = datetime(\'now\') WHERE id = ?')
+    // Don't overwrite if it's already an SVG (has_thumbnail = 2)
+    db.prepare('UPDATE parts SET has_thumbnail = 1, updated_at = datetime(\'now\') WHERE id = ? AND has_thumbnail != 2')
       .run(req.params.id);
 
     res.json({ thumbnailUrl: storage.getPublicPath(req.userId, req.params.id, 'thumbnail.png') });
