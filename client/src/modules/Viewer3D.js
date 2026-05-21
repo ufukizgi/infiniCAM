@@ -110,7 +110,8 @@ export class Viewer3D {
       );
 
       const token = localStorage.getItem('infinicam_token') || '';
-      worker.postMessage({ type: 'load', url, token });
+      const baseUrl = import.meta.env.BASE_URL || '/';
+      worker.postMessage({ type: 'load', url, token, baseUrl });
 
       worker.onmessage = (e) => {
         const { type, meshData, error, message } = e.data;

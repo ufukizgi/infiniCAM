@@ -3,21 +3,22 @@
  * Classic worker (no type:'module') — importScripts is supported.
  */
 
-const OCCT_CDN = '/occt-import-js.js';
-
 let occt = null;
 let occtLoading = null;
 
-function loadOcct() {
+function loadOcct(baseUrl) {
   if (occt) return Promise.resolve(occt);
   if (occtLoading) return occtLoading;
 
   occtLoading = new Promise(async (resolve, reject) => {
     try {
-      importScripts(OCCT_CDN);
+      // Ensure baseUrl ends with slash
+      const base = baseUrl.endsWith('/') ? baseUrl : baseUrl + '/';
+      
+      importScripts(base + 'occt-import-js.js');
       
       // Fetch WASM manually to bypass Emscripten's internal path resolution issues
-      const wasmResponse = await fetch('/occt-import-js.wasm');
+      const wasmResponse = await fetch(base + 'occt-import-js.wasm');
       if (!wasmResponse.ok) {
         throw new Error('Failed to load WASM binary');
       }
@@ -38,12 +39,12 @@ function loadOcct() {
 }
 
 self.onmessage = async (e) => {
-  const { type, url, token } = e.data;
+  const { type, url, token, baseUrl } = e.data;
   if (type !== 'load') return;
 
   try {
     // Load OCCT (cached after first call)
-    const oc = await loadOcct();
+    const oc = await loadOcct(baseUrl || '/');
 
     // Notify progress
     self.postMessage({ type: 'progress', message: 'Fetching STEP file…' });
