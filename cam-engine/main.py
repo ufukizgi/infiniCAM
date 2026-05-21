@@ -234,30 +234,37 @@ def analyze_step(request: AnalyzeRequest):
         def wire_to_svg_path(wire):
             pts = []
             for e in wire.Edges():
-                for i in range(21):
-                    pt = e.positionAt(i / 20.0)
-                    u, v = get_2d(pt)
-                    all_u.append(u)
-                    all_v.append(v)
-                    pts.append(f"{u:.2f},{-v:.2f}")
+                if e.geomType() == "LINE":
+                    for i in (0, 1):
+                        pt = e.positionAt(i)
+                        u, v = get_2d(pt)
+                        all_u.append(u)
+                        all_v.append(v)
+                        pts.append(f"{u:.2f},{-v:.2f}")
+                else:
+                    for i in range(41):
+                        pt = e.positionAt(i / 40.0)
+                        u, v = get_2d(pt)
+                        all_u.append(u)
+                        all_v.append(v)
+                        pts.append(f"{u:.2f},{-v:.2f}")
             if not pts: return ""
             return "M " + pts[0] + " L " + " ".join(pts[1:]) + " Z"
             
-        end_faces = [f for f in solid.Faces() if f.geomType() == "PLANE"]
-        cross_section_face = None
-        for f in end_faces:
-            try:
-                normal = f.normalAt(f.Center())
-                n_vec = [normal.x, normal.y, normal.z]
-                if abs(sum(n_vec[i] * extrusion_axis[i] for i in range(3))) > 0.99:
-                    cross_section_face = f
-                    break
-            except: pass
+        # Robustly find cross section by slicing at the center of bounding box
+        bounds = solid.BoundingBox()
+        center = bounds.center
+        wp = cq.Workplane(cq.Plane(origin=center, normal=tuple(extrusion_axis)))
+        try:
+            section_wp = wp.add(solid).section()
+            wires = section_wp.wires().vals()
+        except:
+            wires = []
             
-        if cross_section_face:
-            path_d = wire_to_svg_path(cross_section_face.outerWire())
-            for inner in cross_section_face.innerWires():
-                path_d += " " + wire_to_svg_path(inner)
+        if wires:
+            path_d = ""
+            for w in wires:
+                path_d += " " + wire_to_svg_path(w)
                 
             if all_u and all_v:
                 min_u, max_u = min(all_u), max(all_u)
