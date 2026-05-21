@@ -36,6 +36,8 @@ async function request(method, path, body, isFormData = false) {
 }
 
 export const api = {
+  getFileUrl: (path) => `${BASE}/${path}`,
+
   // Auth
   register: (email, password, displayName) =>
     request('POST', '/auth/register', { email, password, displayName }).then(d => {

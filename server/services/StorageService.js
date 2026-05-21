@@ -40,7 +40,7 @@ function getFilePath(userId, partId, filename) {
 
 // Public URL path (served via express static)
 function getPublicPath(userId, partId, filename) {
-  return `/storage/users/${userId}/parts/${partId}/${filename}`;
+  return `storage/users/${userId}/parts/${partId}/${filename}`;
 }
 
 module.exports = {

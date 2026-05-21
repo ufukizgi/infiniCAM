@@ -51,7 +51,7 @@ export function renderLibrary(container) {
       <div class="part-card fade-in" data-id="${p.id}">
         <div class="part-thumb">
           ${p.thumbnailUrl
-            ? `<img src="${p.thumbnailUrl}" alt="${p.displayName}" loading="lazy" />`
+            ? `<img src="${api.getFileUrl(p.thumbnailUrl)}" alt="${p.displayName}" loading="lazy" />`
             : `<div class="part-thumb-placeholder">
                  <span style="font-size:2.5rem">⚙️</span>
                  <span>No preview</span>

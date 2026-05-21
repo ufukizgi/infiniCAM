@@ -24,6 +24,7 @@ app.use('/storage', express.static(path.join(__dirname, '../storage')));
 // API Routes
 const apiPaths = ['/api', '/cam/api'];
 apiPaths.forEach(apiPath => {
+  app.use(`${apiPath}/storage`, express.static(path.join(__dirname, '../storage')));
   app.use(`${apiPath}/auth`, authRoutes);
   app.use(`${apiPath}/parts`, libraryRoutes);
   app.use(`${apiPath}/cam`, camRoutes);
