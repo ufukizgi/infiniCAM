@@ -222,7 +222,62 @@ def analyze_step(request: AnalyzeRequest):
             "strokeWidth": 1.5,
             "strokeColor": (255, 255, 255)
         }
-        svg_str = cq.exporters.getSVG(solid, opts=svg_opts)
+        
+        all_u = []
+        all_v = []
+        
+        def get_2d(pt):
+            if axis_name == "X": return pt.y, pt.z
+            elif axis_name == "Y": return pt.x, pt.z
+            else: return pt.x, pt.y
+
+        def wire_to_svg_path(wire):
+            pts = []
+            for e in wire.Edges():
+                for i in range(21):
+                    pt = e.positionAt(i / 20.0)
+                    u, v = get_2d(pt)
+                    all_u.append(u)
+                    all_v.append(v)
+                    pts.append(f"{u:.2f},{-v:.2f}")
+            if not pts: return ""
+            return "M " + pts[0] + " L " + " ".join(pts[1:]) + " Z"
+            
+        end_faces = [f for f in solid.Faces() if f.geomType() == "PLANE"]
+        cross_section_face = None
+        for f in end_faces:
+            try:
+                normal = f.normalAt(f.Center())
+                n_vec = [normal.x, normal.y, normal.z]
+                if abs(sum(n_vec[i] * extrusion_axis[i] for i in range(3))) > 0.99:
+                    cross_section_face = f
+                    break
+            except: pass
+            
+        if cross_section_face:
+            path_d = wire_to_svg_path(cross_section_face.outerWire())
+            for inner in cross_section_face.innerWires():
+                path_d += " " + wire_to_svg_path(inner)
+                
+            if all_u and all_v:
+                min_u, max_u = min(all_u), max(all_u)
+                min_v, max_v = min(all_v), max(all_v)
+                
+                w = max_u - min_u
+                h = max_v - min_v
+                
+                pad_w, pad_h = w * 0.1, h * 0.1
+                w += pad_w * 2
+                h += pad_h * 2
+                
+                vb_x = min_u - pad_w
+                vb_y = -max_v - pad_h
+                
+                svg_str = f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="{vb_x:.2f} {vb_y:.2f} {w:.2f} {h:.2f}"><path d="{path_d}" fill="#ffffff" fill-rule="evenodd" /></svg>'
+            else:
+                svg_str = cq.exporters.getSVG(solid, opts=svg_opts)
+        else:
+            svg_str = cq.exporters.getSVG(solid, opts=svg_opts)
                 
         # Sort features by X coordinate ascending
         unique_features.sort(key=lambda f: f['position'][0])
