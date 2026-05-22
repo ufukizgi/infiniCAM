@@ -186,8 +186,32 @@ export async function renderEditor(container, partId) {
 
   // Load part data
   try {
-    part = await api.getPart(partId);
-    document.getElementById('part-name-crumb').textContent = part.displayName;
+    const [partData, foldersData] = await Promise.all([
+      api.getPart(partId),
+      api.getFolders()
+    ]);
+    part = partData;
+    
+    let pathHtml = '';
+    if (part.folderId) {
+      let curr = foldersData.find(f => f.id === part.folderId);
+      const pathArr = [];
+      while (curr) {
+        pathArr.unshift(curr);
+        curr = foldersData.find(f => f.id === curr.parentId);
+      }
+      pathHtml = pathArr.map(f => `<span class="breadcrumb-sep" style="opacity:0.5;margin:0 8px;">/</span><span>${f.name}</span>`).join('');
+    }
+
+    const breadcrumb = document.querySelector('.breadcrumb');
+    breadcrumb.innerHTML = `
+      <a id="back-to-library" style="cursor:pointer; transition:color 0.2s;">◀ Library</a>
+      ${pathHtml}
+      <span class="breadcrumb-sep" style="opacity:0.5;margin:0 8px;">/</span>
+      <span class="breadcrumb-current" id="part-name-crumb" style="color:var(--text-1);">${part.displayName}</span>
+    `;
+    document.getElementById('back-to-library').addEventListener('click', () => location.hash = '#/library');
+
     document.getElementById('status-text').textContent = part.displayName;
     renderTabContent();
   } catch (err) {
