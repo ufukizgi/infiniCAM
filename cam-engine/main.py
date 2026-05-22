@@ -259,15 +259,45 @@ def analyze_step(request: AnalyzeRequest):
             if not pts: return ""
             return "M " + pts[0] + " L " + " ".join(pts[1:]) + " Z"
             
-        # Robustly find cross section by slicing at the center of bounding box
+        # Robustly find unmachined cross section by taking 11 slices and picking the max area
         bounds = solid.BoundingBox()
-        center = bounds.center
-        wp = cq.Workplane(cq.Plane(origin=center, normal=tuple(extrusion_axis)))
-        try:
-            section_wp = wp.add(solid).section()
-            wires = section_wp.wires().vals()
-        except:
-            wires = []
+        z_min = 0; z_max = 0
+        if axis_name == "X":
+            z_min, z_max = bounds.xmin, bounds.xmax
+        elif axis_name == "Y":
+            z_min, z_max = bounds.ymin, bounds.ymax
+        else:
+            z_min, z_max = bounds.zmin, bounds.zmax
+
+        best_area = -1
+        best_wires = []
+        
+        for i in range(11):
+            val = z_min + (z_max - z_min) * (i + 0.5) / 11.0
+            origin = [0, 0, 0]
+            if axis_name == "X": origin[0] = val
+            elif axis_name == "Y": origin[1] = val
+            else: origin[2] = val
+            
+            wp = cq.Workplane(cq.Plane(origin=tuple(origin), normal=tuple(extrusion_axis)))
+            try:
+                section_wp = wp.add(solid).section()
+                wires = section_wp.wires().vals()
+                if not wires: continue
+                
+                wires_sorted = sorted(wires, key=lambda w: w.BoundingBox().DiagonalLength, reverse=True)
+                try:
+                    face = cq.Face.makeFromWires(wires_sorted[0], wires_sorted[1:])
+                    area = face.Area()
+                except:
+                    area = wires_sorted[0].BoundingBox().DiagonalLength
+                    
+                if area > best_area:
+                    best_area = area
+                    best_wires = wires
+            except: pass
+            
+        wires = best_wires
             
         if wires:
             path_d = ""
