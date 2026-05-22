@@ -574,6 +574,42 @@ input, textarea, select { font-family: inherit; }
   transform: translateY(-3px);
   box-shadow: var(--shadow-md), 0 0 20px rgba(0, 212, 255, 0.08);
 }
+.folder-card {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: var(--r-lg);
+  padding: 24px;
+  cursor: pointer;
+  transition: all 250ms var(--ease);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  backdrop-filter: blur(8px);
+}
+.folder-card:hover {
+  border-color: var(--border-accent);
+  transform: translateY(-3px);
+  background: var(--accent-dim);
+}
+.folder-card.drag-over {
+  border-color: var(--accent);
+  background: rgba(0, 212, 255, 0.2);
+  transform: scale(1.02);
+}
+.breadcrumb {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 0.9rem;
+  color: var(--text-2);
+}
+.breadcrumb-item {
+  cursor: pointer;
+  transition: color var(--transition);
+}
+.breadcrumb-item:hover { color: var(--text-1); }
+.breadcrumb-separator { opacity: 0.5; font-size: 0.8rem; }
 .part-thumb {
   width: 100%;
   height: 160px;

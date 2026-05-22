@@ -14,9 +14,12 @@ router.get('/', (req, res) => {
   try {
     const db = getDB();
     const parts = db.prepare(`
-      SELECT id, original_filename, display_name, file_size, dimensions,
-             feature_count, tags, notes, has_thumbnail, uploaded_at, updated_at
-      FROM parts WHERE user_id = ? ORDER BY updated_at DESC
+      SELECT p.id, p.original_filename, p.display_name, p.file_size, p.dimensions,
+             p.feature_count, p.tags, p.notes, p.has_thumbnail, p.uploaded_at, p.updated_at,
+             pf.folder_id
+      FROM parts p
+      LEFT JOIN part_folders pf ON p.id = pf.part_id
+      WHERE p.user_id = ? ORDER BY p.updated_at DESC
     `).all(req.userId);
 
     const result = parts.map(p => ({
@@ -31,6 +34,7 @@ router.get('/', (req, res) => {
       hasThumbnail: p.has_thumbnail,
       uploadedAt: p.uploaded_at,
       updatedAt: p.updated_at,
+      folderId: p.folder_id || null,
       thumbnailUrl: p.has_thumbnail
         ? storage.getPublicPath(req.userId, p.id, p.has_thumbnail === 2 ? 'thumbnail.svg' : 'thumbnail.png')
         : null,
@@ -48,7 +52,10 @@ router.get('/:id', (req, res) => {
   try {
     const db = getDB();
     const part = db.prepare(`
-      SELECT * FROM parts WHERE id = ? AND user_id = ?
+      SELECT p.*, pf.folder_id 
+      FROM parts p 
+      LEFT JOIN part_folders pf ON p.id = pf.part_id
+      WHERE p.id = ? AND p.user_id = ?
     `).get(req.params.id, req.userId);
 
     if (!part) return res.status(404).json({ error: 'Part not found' });
@@ -66,6 +73,7 @@ router.get('/:id', (req, res) => {
       stpSha256: part.stp_sha256,
       uploadedAt: part.uploaded_at,
       updatedAt: part.updated_at,
+      folderId: part.folder_id || null,
       thumbnailUrl: part.has_thumbnail
         ? storage.getPublicPath(req.userId, part.id, part.has_thumbnail === 2 ? 'thumbnail.svg' : 'thumbnail.png')
         : null,
@@ -164,6 +172,32 @@ router.patch('/:id', (req, res) => {
     res.json({ success: true });
   } catch (err) {
     res.status(500).json({ error: 'Update failed' });
+  }
+});
+
+// PUT /api/parts/:id/folder — move part to folder
+router.put('/:id/folder', (req, res) => {
+  try {
+    const { folderId } = req.body;
+    const db = getDB();
+    
+    const part = db.prepare('SELECT id FROM parts WHERE id = ? AND user_id = ?').get(req.params.id, req.userId);
+    if (!part) return res.status(404).json({ error: 'Part not found' });
+    
+    // Clear existing mapping to enforce 1-to-1
+    db.prepare('DELETE FROM part_folders WHERE part_id = ?').run(req.params.id);
+    
+    if (folderId) {
+      const folder = db.prepare('SELECT id FROM folders WHERE id = ? AND user_id = ?').get(folderId, req.userId);
+      if (!folder) return res.status(404).json({ error: 'Folder not found' });
+      
+      db.prepare('INSERT INTO part_folders (part_id, folder_id) VALUES (?, ?)').run(req.params.id, folderId);
+    }
+    
+    res.json({ success: true });
+  } catch(err) {
+    console.error('Update folder error:', err);
+    res.status(500).json({ error: 'Failed to update folder' });
   }
 });
 

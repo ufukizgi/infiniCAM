@@ -71,6 +71,7 @@ export const api = {
   },
 
   updatePart: (id, data) => request('PATCH', `/parts/${id}`, data),
+  updatePartFolder: (id, folderId) => request('PUT', `/parts/${id}/folder`, { folderId }),
 
   getAnnotations: (id) => request('GET', `/parts/${id}/annotations`),
   saveAnnotations: (id, data) => request('PUT', `/parts/${id}/annotations`, data),
@@ -78,6 +79,12 @@ export const api = {
   deletePart: (id) => request('DELETE', `/parts/${id}`),
 
   getStpUrl: (id) => `${BASE}/parts/${id}/files/stp`,
+
+  // Folders
+  getFolders: () => request('GET', '/folders'),
+  createFolder: (name, parentId = null) => request('POST', '/folders', { name, parentId }),
+  updateFolder: (id, data) => request('PUT', `/folders/${id}`, data),
+  deleteFolder: (id) => request('DELETE', `/folders/${id}`),
 
   // CAM
   getMachines: () => request('GET', '/cam/machines'),

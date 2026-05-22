@@ -7,6 +7,7 @@ const { initDB } = require('./db');
 const authRoutes = require('./routes/auth');
 const libraryRoutes = require('./routes/library');
 const camRoutes = require('./routes/cam');
+const folderRoutes = require('./routes/folders');
 
 const app = express();
 const PORT = process.env.PORT || 3001;
@@ -28,6 +29,7 @@ apiPaths.forEach(apiPath => {
   app.use(`${apiPath}/auth`, authRoutes);
   app.use(`${apiPath}/parts`, libraryRoutes);
   app.use(`${apiPath}/cam`, camRoutes);
+  app.use(`${apiPath}/folders`, folderRoutes);
   
   // Health check
   app.get(`${apiPath}/health`, (req, res) => {

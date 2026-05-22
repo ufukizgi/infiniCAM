@@ -4,83 +4,231 @@ import { formatFileSize, formatDate, formatRelativeDate } from '../modules/utils
 
 export function renderLibrary(container) {
   let parts = [];
+  let folders = [];
+  let currentFolderId = null;
   let searchQuery = '';
-  let isUploading = false;
-
-  async function loadParts() {
+  let activeTag = null;
+  
+  async function loadData() {
     try {
-      parts = await api.getParts();
-      renderPartGrid();
+      [parts, folders] = await Promise.all([
+        api.getParts(),
+        api.getFolders()
+      ]);
+      renderSidebar();
+      renderMainGrid();
     } catch (err) {
-      toast.error('Failed to load parts: ' + err.message);
+      toast.error('Failed to load data: ' + err.message);
     }
   }
 
-  function renderPartGrid() {
+  function getFolderPath(folderId) {
+    if (!folderId) return [];
+    const path = [];
+    let curr = folders.find(f => f.id === folderId);
+    while (curr) {
+      path.unshift(curr);
+      curr = folders.find(f => f.id === curr.parentId);
+    }
+    return path;
+  }
+
+  function renderSidebar() {
+    const sidebar = document.getElementById('library-sidebar-content');
+    if (!sidebar) return;
+
+    // Unique tags
+    const allTags = [...new Set(parts.flatMap(p => p.tags || []))].sort();
+
+    function renderTree(parentId, level = 0) {
+      const children = folders.filter(f => f.parentId === parentId).sort((a,b) => a.name.localeCompare(b.name));
+      return children.map(f => `
+        <div class="sidebar-item ${currentFolderId === f.id ? 'active' : ''} folder-drop-target" 
+             style="padding-left: ${12 + level * 16}px;" 
+             data-nav-folder="${f.id}" data-folder-id="${f.id}">
+          <span class="sidebar-icon">📁</span> <span class="truncate" style="flex:1;">${f.name}</span>
+        </div>
+        ${renderTree(f.id, level + 1)}
+      `).join('');
+    }
+
+    sidebar.innerHTML = `
+      <div class="sidebar-section">
+        <div class="sidebar-label">Library</div>
+        <div class="sidebar-item ${!currentFolderId && !activeTag ? 'active' : ''} folder-drop-target" data-nav-folder="root" data-folder-id="root">
+          <span class="sidebar-icon">📦</span> <span style="flex:1;">All Parts (Root)</span>
+        </div>
+        ${renderTree(null, 1)}
+      </div>
+      
+      ${allTags.length > 0 ? `
+        <div class="divider" style="margin:8px 12px;"></div>
+        <div class="sidebar-section">
+          <div class="sidebar-label">Tags</div>
+          ${allTags.map(tag => `
+            <div class="sidebar-item ${activeTag === tag ? 'active' : ''}" data-nav-tag="${tag}">
+              <span class="sidebar-icon" style="color:var(--accent)">🏷️</span> <span class="truncate">${tag}</span>
+            </div>
+          `).join('')}
+        </div>
+      ` : ''}
+    `;
+
+    // Attach sidebar events
+    sidebar.querySelectorAll('[data-nav-folder]').forEach(el => {
+      el.addEventListener('click', () => {
+        activeTag = null;
+        currentFolderId = el.dataset.navFolder === 'root' ? null : el.dataset.navFolder;
+        searchQuery = '';
+        document.getElementById('search-input').value = '';
+        renderSidebar();
+        renderMainGrid();
+      });
+    });
+
+    sidebar.querySelectorAll('[data-nav-tag]').forEach(el => {
+      el.addEventListener('click', () => {
+        activeTag = activeTag === el.dataset.navTag ? null : el.dataset.navTag;
+        renderSidebar();
+        renderMainGrid();
+      });
+    });
+
+    attachDropTargets(sidebar);
+  }
+
+  function renderMainGrid() {
     const grid = document.getElementById('parts-grid');
+    const breadcrumbContainer = document.getElementById('breadcrumb-container');
+    const libraryCount = document.getElementById('library-count');
     if (!grid) return;
 
-    const filtered = parts.filter(p =>
-      !searchQuery ||
-      p.displayName.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      p.originalFilename.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (p.tags || []).some(t => t.toLowerCase().includes(searchQuery.toLowerCase()))
-    );
+    // Render Breadcrumbs
+    const path = getFolderPath(currentFolderId);
+    breadcrumbContainer.innerHTML = `
+      <div class="breadcrumb">
+        <div class="breadcrumb-item" data-nav-bc="root">Library</div>
+        ${path.map(f => `
+          <div class="breadcrumb-separator">/</div>
+          <div class="breadcrumb-item" data-nav-bc="${f.id}">${f.name}</div>
+        `).join('')}
+        ${activeTag ? `<div class="breadcrumb-separator">/</div><div style="color:var(--accent)">Tag: ${activeTag}</div>` : ''}
+      </div>
+    `;
 
-    if (filtered.length === 0) {
+    breadcrumbContainer.querySelectorAll('[data-nav-bc]').forEach(el => {
+      el.addEventListener('click', () => {
+        activeTag = null;
+        currentFolderId = el.dataset.navBc === 'root' ? null : el.dataset.navBc;
+        searchQuery = '';
+        document.getElementById('search-input').value = '';
+        renderSidebar();
+        renderMainGrid();
+      });
+    });
+
+    // Filter subfolders and parts
+    const subfolders = (searchQuery || activeTag) ? [] : folders.filter(f => f.parentId === currentFolderId).sort((a,b) => a.name.localeCompare(b.name));
+    
+    let filteredParts = parts;
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase();
+      filteredParts = parts.filter(p => 
+        p.displayName.toLowerCase().includes(q) || 
+        p.originalFilename.toLowerCase().includes(q) ||
+        (p.tags || []).some(t => t.toLowerCase().includes(q))
+      );
+    } else if (activeTag) {
+      filteredParts = parts.filter(p => (p.tags || []).includes(activeTag));
+    } else {
+      filteredParts = parts.filter(p => p.folderId === currentFolderId);
+    }
+
+    if (subfolders.length === 0 && filteredParts.length === 0) {
       grid.innerHTML = `
         <div class="empty-state" style="grid-column:1/-1;">
-          <div class="empty-state-icon">📦</div>
-          <h3>${searchQuery ? 'No matching parts' : 'No parts yet'}</h3>
-          <p>${searchQuery
-            ? 'Try a different search term.'
-            : 'Upload your first STEP file to get started.'
-          }</p>
+          <div class="empty-state-icon">${searchQuery ? '🔍' : '📁'}</div>
+          <h3>${searchQuery ? 'No matching results' : 'This folder is empty'}</h3>
+          <p>${searchQuery ? 'Try a different search term.' : 'Upload a STEP file or create a subfolder.'}</p>
           ${!searchQuery ? `<button class="btn btn-primary" id="empty-upload-btn">Upload STEP File</button>` : ''}
         </div>
       `;
       document.getElementById('empty-upload-btn')?.addEventListener('click', openUploadModal);
-      document.getElementById('library-count').textContent = '0 parts';
+      libraryCount.textContent = '0 items';
       return;
     }
 
-    document.getElementById('library-count').textContent =
-      `${filtered.length} part${filtered.length !== 1 ? 's' : ''}`;
+    libraryCount.textContent = `${subfolders.length} folder${subfolders.length !== 1 ? 's' : ''}, ${filteredParts.length} part${filteredParts.length !== 1 ? 's' : ''}`;
 
-    grid.innerHTML = filtered.map(p => `
-      <div class="part-card fade-in" data-id="${p.id}">
-        <div class="part-thumb">
-          ${p.thumbnailUrl
-            ? `<img src="${api.getFileUrl(p.thumbnailUrl)}" alt="${p.displayName}" loading="lazy" />`
-            : `<div class="part-thumb-placeholder">
-                 <span style="font-size:2.5rem">⚙️</span>
-                 <span>No preview</span>
-               </div>`
-          }
+    grid.innerHTML = `
+      ${subfolders.map(f => `
+        <div class="folder-card folder-drop-target fade-in" data-nav-folder="${f.id}" data-folder-id="${f.id}">
+          <div style="font-size:3rem; margin-bottom:12px;">📁</div>
+          <div class="font-medium text-lg truncate w-full text-center" title="${f.name}">${f.name}</div>
+          <button class="btn btn-ghost btn-icon absolute" style="top:8px; right:8px; opacity:0.5;" data-delete-folder="${f.id}">🗑️</button>
         </div>
-        <div class="part-card-body">
-          <div class="part-name" title="${p.displayName}">${p.displayName}</div>
-          <div class="part-meta">
-            <span>${formatFileSize(p.fileSize)}</span>
-            <span>·</span>
-            <span>${formatRelativeDate(p.uploadedAt)}</span>
+      `).join('')}
+      
+      ${filteredParts.map(p => `
+        <div class="part-card fade-in" data-id="${p.id}" draggable="true">
+          <div class="part-thumb">
+            ${p.thumbnailUrl
+              ? `<img src="${api.getFileUrl(p.thumbnailUrl)}" alt="${p.displayName}" loading="lazy" />`
+              : `<div class="part-thumb-placeholder">
+                   <span style="font-size:2.5rem">⚙️</span>
+                   <span>No preview</span>
+                 </div>`
+            }
           </div>
-          <div class="flex gap-2 mt-2" style="flex-wrap:wrap;">
-            ${(p.tags || []).map(tag =>
-              `<span class="badge badge-cyan">${tag}</span>`
-            ).join('')}
+          <div class="part-card-body">
+            <div class="part-name" title="${p.displayName}">${p.displayName}</div>
+            <div class="part-meta">
+              <span>${formatFileSize(p.fileSize)}</span>
+              <span>·</span>
+              <span>${formatRelativeDate(p.uploadedAt)}</span>
+            </div>
+            <div class="flex gap-2 mt-2" style="flex-wrap:wrap;">
+              ${(p.tags || []).map(tag =>
+                `<span class="badge badge-cyan">${tag}</span>`
+              ).join('')}
+            </div>
+          </div>
+          <div class="part-card-actions">
+            <button class="btn btn-primary" style="flex:1;padding:7px 12px;font-size:0.8rem;" data-open="${p.id}">
+              Open
+            </button>
+            <button class="btn btn-ghost btn-icon" title="Delete" data-delete="${p.id}" style="color:var(--danger)">
+              🗑️
+            </button>
           </div>
         </div>
-        <div class="part-card-actions">
-          <button class="btn btn-primary" style="flex:1;padding:7px 12px;font-size:0.8rem;" data-open="${p.id}">
-            Open
-          </button>
-          <button class="btn btn-ghost btn-icon" title="Delete" data-delete="${p.id}" style="color:var(--danger)">
-            🗑️
-          </button>
-        </div>
-      </div>
-    `).join('');
+      `).join('')}
+    `;
+
+    // Folder navigation
+    grid.querySelectorAll('[data-nav-folder]').forEach(el => {
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('[data-delete-folder]')) return;
+        currentFolderId = el.dataset.navFolder;
+        renderSidebar();
+        renderMainGrid();
+      });
+    });
+
+    // Delete folder
+    grid.querySelectorAll('[data-delete-folder]').forEach(btn => {
+      btn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        if (!confirm('Delete this folder? Parts inside will be moved to the root library.')) return;
+        try {
+          await api.deleteFolder(btn.dataset.deleteFolder);
+          await loadData();
+          toast.success('Folder deleted');
+        } catch (err) {
+          toast.error('Failed to delete folder: ' + err.message);
+        }
+      });
+    });
 
     // Open part
     grid.querySelectorAll('[data-open]').forEach(btn => {
@@ -94,6 +242,16 @@ export function renderLibrary(container) {
         if (e.target.closest('[data-open]') || e.target.closest('[data-delete]')) return;
         location.hash = `#/editor/${card.dataset.id}`;
       });
+
+      // DRAG START
+      card.addEventListener('dragstart', (e) => {
+        e.dataTransfer.setData('text/plain', card.dataset.id);
+        e.dataTransfer.effectAllowed = 'move';
+        card.style.opacity = '0.5';
+      });
+      card.addEventListener('dragend', () => {
+        card.style.opacity = '1';
+      });
     });
 
     // Delete part
@@ -104,12 +262,61 @@ export function renderLibrary(container) {
         try {
           await api.deletePart(btn.dataset.delete);
           parts = parts.filter(p => p.id !== btn.dataset.delete);
-          renderPartGrid();
+          renderSidebar();
+          renderMainGrid();
           toast.success('Part deleted');
         } catch (err) {
           toast.error('Delete failed: ' + err.message);
         }
       });
+    });
+
+    attachDropTargets(grid);
+  }
+
+  function attachDropTargets(containerEl) {
+    containerEl.querySelectorAll('.folder-drop-target').forEach(target => {
+      target.addEventListener('dragover', (e) => {
+        e.preventDefault(); // allow drop
+        target.classList.add('drag-over');
+      });
+      target.addEventListener('dragleave', () => {
+        target.classList.remove('drag-over');
+      });
+      target.addEventListener('drop', async (e) => {
+        e.preventDefault();
+        target.classList.remove('drag-over');
+        const partId = e.dataTransfer.getData('text/plain');
+        if (!partId) return; // Ignore file drops here
+
+        const destFolderId = target.dataset.folderId === 'root' ? null : target.dataset.folderId;
+        const part = parts.find(p => p.id === partId);
+        
+        // Prevent moving to same folder
+        if (part && part.folderId === destFolderId) return;
+
+        try {
+          await api.updatePartFolder(partId, destFolderId);
+          if (part) part.folderId = destFolderId;
+          renderSidebar();
+          renderMainGrid();
+          toast.success('Part moved successfully');
+        } catch(err) {
+          toast.error('Failed to move part: ' + err.message);
+        }
+      });
+    });
+  }
+
+  function openNewFolderModal() {
+    const name = prompt('Enter new folder name:');
+    if (!name || name.trim() === '') return;
+    
+    api.createFolder(name, currentFolderId).then(() => {
+      toast.success('Folder created');
+      loadData();
+    }).catch(err => {
+      toast.error('Failed to create folder: ' + err.message);
     });
   }
 
@@ -137,6 +344,10 @@ export function renderLibrary(container) {
           <div class="input-group mt-4">
             <label>Display Name (optional)</label>
             <input class="input" id="modal-display-name" type="text" placeholder="e.g. Profile A — Door Frame" />
+          </div>
+          <div class="input-group mt-3">
+            <label>Tags (comma separated)</label>
+            <input class="input" id="modal-tags" type="text" placeholder="e.g. CNC, Urgent, Door" />
           </div>
         </div>
 
@@ -207,10 +418,24 @@ export function renderLibrary(container) {
 
       try {
         const displayName = overlay.querySelector('#modal-display-name').value.trim();
+        const tagsInput = overlay.querySelector('#modal-tags').value.trim();
+        const tags = tagsInput ? tagsInput.split(',').map(t => t.trim()).filter(Boolean) : [];
+        
         const result = await api.uploadPart(selectedFile, displayName);
+        
+        // If we uploaded into a folder or added tags, update it immediately
+        if (currentFolderId || tags.length > 0) {
+          if (currentFolderId) {
+            await api.updatePartFolder(result.id, currentFolderId);
+          }
+          if (tags.length > 0) {
+            await api.updatePart(result.id, { tags });
+          }
+        }
+
         overlay.remove();
         toast.success('Part uploaded successfully!');
-        await loadParts();
+        
         // Open editor to trigger thumbnail generation
         location.hash = `#/editor/${result.id}`;
       } catch (err) {
@@ -231,6 +456,9 @@ export function renderLibrary(container) {
           <div class="logo-text">infini<span>CAM</span></div>
         </div>
         <div class="flex items-center gap-3">
+          <button class="btn btn-secondary" id="new-folder-btn">
+            <span>📁</span> New Folder
+          </button>
           <button class="btn btn-primary" id="upload-btn">
             <span>＋</span> Upload STEP
           </button>
@@ -240,30 +468,16 @@ export function renderLibrary(container) {
 
       <div class="library-body">
         <!-- Sidebar -->
-        <div class="library-sidebar">
-          <div class="sidebar-section">
-            <div class="sidebar-label">Library</div>
-            <div class="sidebar-item active sidebar-icon">
-              <span class="sidebar-icon">📦</span> All Parts
-            </div>
-          </div>
-          <div class="divider" style="margin:8px 12px;"></div>
-          <div class="sidebar-section">
-            <div class="sidebar-label">Coming Soon</div>
-            <div class="sidebar-item" style="opacity:0.4;pointer-events:none;">
-              <span class="sidebar-icon">📁</span> Folders
-            </div>
-            <div class="sidebar-item" style="opacity:0.4;pointer-events:none;">
-              <span class="sidebar-icon">🏷️</span> Tags
-            </div>
-          </div>
+        <div class="library-sidebar" id="library-sidebar-content">
+          <!-- Populated dynamically -->
         </div>
 
         <!-- Main -->
         <div class="library-main">
           <!-- Toolbar -->
           <div class="library-toolbar">
-            <div class="library-search flex-1" style="max-width:360px; position:relative;">
+            <div id="breadcrumb-container" class="flex-1"></div>
+            <div class="library-search" style="max-width:300px;">
               <input
                 class="input"
                 id="search-input"
@@ -306,6 +520,7 @@ export function renderLibrary(container) {
 
   // Events
   document.getElementById('upload-btn').addEventListener('click', openUploadModal);
+  document.getElementById('new-folder-btn').addEventListener('click', openNewFolderModal);
 
   document.getElementById('logout-btn').addEventListener('click', () => {
     api.logout();
@@ -314,28 +529,34 @@ export function renderLibrary(container) {
 
   document.getElementById('search-input').addEventListener('input', (e) => {
     searchQuery = e.target.value;
-    renderPartGrid();
+    renderMainGrid();
   });
 
-  // Page-level drag & drop
+  // Page-level drag & drop for file upload (not part moving)
   const pageDrop = document.getElementById('page-drop-zone');
   document.addEventListener('dragover', (e) => {
+    // Check if dragging a part (string data) or a file
+    const isFile = e.dataTransfer.types.includes('Files');
+    if (!isFile) return;
+    
     e.preventDefault();
     pageDrop.style.borderColor = 'var(--border-accent)';
     pageDrop.style.background = 'var(--accent-dim)';
   });
-  document.addEventListener('dragleave', () => {
+  document.addEventListener('dragleave', (e) => {
     pageDrop.style.borderColor = 'transparent';
     pageDrop.style.background = '';
   });
   document.addEventListener('drop', (e) => {
-    e.preventDefault();
     pageDrop.style.borderColor = 'transparent';
     pageDrop.style.background = '';
+    const isFile = e.dataTransfer.types.includes('Files');
+    if (!isFile) return;
+    
+    e.preventDefault();
     const f = e.dataTransfer.files[0];
     if (f) {
       openUploadModal();
-      // Auto-select file after modal opens
       setTimeout(() => {
         const input = document.getElementById('modal-file-input');
         if (input) {
@@ -348,5 +569,5 @@ export function renderLibrary(container) {
     }
   });
 
-  loadParts();
+  loadData();
 }
