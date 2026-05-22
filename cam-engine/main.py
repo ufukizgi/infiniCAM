@@ -259,7 +259,7 @@ def analyze_step(request: AnalyzeRequest):
             if not pts: return ""
             return "M " + pts[0] + " L " + " ".join(pts[1:]) + " Z"
             
-        # Robustly find unmachined cross section by Union Projection (combining multiple slices)
+        # Find unmachined cross section by taking 31 slices and picking the max area
         bounds = solid.BoundingBox()
         z_min = 0; z_max = 0
         if axis_name == "X":
@@ -269,11 +269,12 @@ def analyze_step(request: AnalyzeRequest):
         else:
             z_min, z_max = bounds.zmin, bounds.zmax
 
-        faces_to_union = []
+        best_area = -1
+        best_wires = []
         
-        # Take 21 slices along the profile to capture all solid material and fill holes
-        for i in range(21):
-            val = z_min + (z_max - z_min) * (i + 0.5) / 21.0
+        # 31 slices guarantees we find an untouched cross section if one exists
+        for i in range(31):
+            val = z_min + (z_max - z_min) * (i + 0.5) / 31.0
             origin = [0, 0, 0]
             if axis_name == "X": origin[0] = val
             elif axis_name == "Y": origin[1] = val
@@ -286,30 +287,18 @@ def analyze_step(request: AnalyzeRequest):
                 if not wires: continue
                 
                 wires_sorted = sorted(wires, key=lambda w: w.BoundingBox().DiagonalLength, reverse=True)
-                face = cq.Face.makeFromWires(wires_sorted[0], wires_sorted[1:])
-                # Extrude slightly to allow 3D boolean union
-                ext_solid = cq.Solid.extrudeLinear(face, cq.Vector(0, 0, 0.1))
-                faces_to_union.append(ext_solid)
+                try:
+                    face = cq.Face.makeFromWires(wires_sorted[0], wires_sorted[1:])
+                    area = face.Area()
+                except:
+                    area = wires_sorted[0].BoundingBox().DiagonalLength
+                    
+                if area > best_area:
+                    best_area = area
+                    best_wires = wires
             except: pass
             
-        wires = []
-        if faces_to_union:
-            try:
-                # Union all slices to form the ultimate unmachined silhouette (filling all holes)
-                final_solid = cq.Workplane("XY").add(faces_to_union[0])
-                for s in faces_to_union[1:]:
-                    final_solid = final_solid.union(cq.Workplane("XY").add(s))
-                    
-                # Take one final section of the unioned solid
-                wires = final_solid.section().wires().vals()
-            except:
-                # Fallback to max area if union fails
-                best_area = -1
-                for s in faces_to_union:
-                    area = s.Volume()
-                    if area > best_area:
-                        best_area = area
-                        wires = cq.Workplane("XY").add(s).section().wires().vals()
+        wires = best_wires
             
         if wires:
             path_d = ""
