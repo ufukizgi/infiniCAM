@@ -231,23 +231,31 @@ def analyze_step(request: AnalyzeRequest):
             elif axis_name == "Y": return pt.x, pt.z
             else: return pt.x, pt.y
 
+        from OCP.BRepTools import BRepTools_WireExplorer
+        from OCP.TopAbs import TopAbs_REVERSED
+
         def wire_to_svg_path(wire):
             pts = []
-            for e in wire.Edges():
-                if e.geomType() == "LINE":
-                    for i in (0, 1):
-                        pt = e.positionAt(i)
-                        u, v = get_2d(pt)
-                        all_u.append(u)
-                        all_v.append(v)
-                        pts.append(f"{u:.2f},{-v:.2f}")
+            explorer = BRepTools_WireExplorer(wire.wrapped)
+            while explorer.More():
+                e = cq.Edge(explorer.Current())
+                ori = e.wrapped.Orientation()
+                
+                num_samples = 2 if e.geomType() == "LINE" else 41
+                if ori == TopAbs_REVERSED:
+                    samples = [1.0 - (i / (num_samples - 1)) for i in range(num_samples)]
                 else:
-                    for i in range(41):
-                        pt = e.positionAt(i / 40.0)
-                        u, v = get_2d(pt)
-                        all_u.append(u)
-                        all_v.append(v)
-                        pts.append(f"{u:.2f},{-v:.2f}")
+                    samples = [i / (num_samples - 1) for i in range(num_samples)]
+                    
+                for t in samples:
+                    pt = e.positionAt(t)
+                    u, v = get_2d(pt)
+                    all_u.append(u)
+                    all_v.append(v)
+                    pts.append(f"{u:.2f},{-v:.2f}")
+                    
+                explorer.Next()
+                
             if not pts: return ""
             return "M " + pts[0] + " L " + " ".join(pts[1:]) + " Z"
             
