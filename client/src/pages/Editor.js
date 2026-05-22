@@ -200,17 +200,16 @@ export async function renderEditor(container, partId) {
         pathArr.unshift(curr);
         curr = foldersData.find(f => f.id === curr.parentId);
       }
-      pathHtml = pathArr.map(f => `<span class="breadcrumb-sep" style="opacity:0.5;margin:0 8px;">/</span><span>${f.name}</span>`).join('');
+      pathHtml = pathArr.map(f => `<span class="breadcrumb-sep" style="opacity:0.5;margin:0 8px;">/</span><a href="#/library/${f.id}" style="cursor:pointer; transition:color 0.2s;">${f.name}</a>`).join('');
     }
 
     const breadcrumb = document.querySelector('.breadcrumb');
     breadcrumb.innerHTML = `
-      <a id="back-to-library" style="cursor:pointer; transition:color 0.2s;">◀ Library</a>
+      <a href="#/library" style="cursor:pointer; transition:color 0.2s;">◀ Library</a>
       ${pathHtml}
       <span class="breadcrumb-sep" style="opacity:0.5;margin:0 8px;">/</span>
       <span class="breadcrumb-current" id="part-name-crumb" style="color:var(--text-1);">${part.displayName}</span>
     `;
-    document.getElementById('back-to-library').addEventListener('click', () => location.hash = '#/library');
 
     document.getElementById('status-text').textContent = part.displayName;
     renderTabContent();

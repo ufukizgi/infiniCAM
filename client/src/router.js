@@ -8,7 +8,7 @@ const app = document.getElementById('app');
 function getRoute() {
   const hash = location.hash || '#/';
   if (hash.startsWith('#/editor/')) return { name: 'editor', partId: hash.split('/')[2] };
-  if (hash === '#/library') return { name: 'library' };
+  if (hash.startsWith('#/library')) return { name: 'library', folderId: hash.split('/')[2] || null };
   return { name: 'auth' };
 }
 
@@ -36,7 +36,7 @@ async function navigate() {
 
   app.innerHTML = '';
   if (route.name === 'auth') renderAuth(app);
-  else if (route.name === 'library') renderLibrary(app);
+  else if (route.name === 'library') renderLibrary(app, route.folderId);
   else if (route.name === 'editor') renderEditor(app, route.partId);
 }
 

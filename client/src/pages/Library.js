@@ -2,10 +2,10 @@ import { api } from '../api/client.js';
 import { toast } from '../modules/Toast.js';
 import { formatFileSize, formatDate, formatRelativeDate } from '../modules/utils.js';
 
-export function renderLibrary(container) {
+export function renderLibrary(container, initialFolderId = null) {
   let parts = [];
   let folders = [];
-  let currentFolderId = null;
+  let currentFolderId = initialFolderId;
   let searchQuery = '';
   let activeTag = null;
   
@@ -77,12 +77,8 @@ export function renderLibrary(container) {
     // Attach sidebar events
     sidebar.querySelectorAll('[data-nav-folder]').forEach(el => {
       el.addEventListener('click', () => {
-        activeTag = null;
-        currentFolderId = el.dataset.navFolder === 'root' ? null : el.dataset.navFolder;
-        searchQuery = '';
-        document.getElementById('search-input').value = '';
-        renderSidebar();
-        renderMainGrid();
+        const target = el.dataset.navFolder === 'root' ? '' : '/' + el.dataset.navFolder;
+        location.hash = '#/library' + target;
       });
     });
 
@@ -118,12 +114,8 @@ export function renderLibrary(container) {
 
     breadcrumbContainer.querySelectorAll('[data-nav-bc]').forEach(el => {
       el.addEventListener('click', () => {
-        activeTag = null;
-        currentFolderId = el.dataset.navBc === 'root' ? null : el.dataset.navBc;
-        searchQuery = '';
-        document.getElementById('search-input').value = '';
-        renderSidebar();
-        renderMainGrid();
+        const target = el.dataset.navBc === 'root' ? '' : '/' + el.dataset.navBc;
+        location.hash = '#/library' + target;
       });
     });
 
@@ -209,9 +201,7 @@ export function renderLibrary(container) {
     grid.querySelectorAll('[data-nav-folder]').forEach(el => {
       el.addEventListener('click', (e) => {
         if (e.target.closest('[data-delete-folder]')) return;
-        currentFolderId = el.dataset.navFolder;
-        renderSidebar();
-        renderMainGrid();
+        location.hash = '#/library/' + el.dataset.navFolder;
       });
     });
 
