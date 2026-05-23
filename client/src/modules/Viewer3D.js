@@ -10,6 +10,8 @@ export class Viewer3D {
   constructor(canvas) {
     this.canvas = canvas;
     this.wireframe = false;
+    this.isDisposed = false;
+    this._worker = null;
     this._initThree();
   }
 
@@ -105,23 +107,34 @@ export class Viewer3D {
    */
   async loadSTP(url, onProgress) {
     return new Promise((resolve, reject) => {
-      const worker = new Worker(
+      this._worker = new Worker(
         new URL('../workers/occt-worker.js', import.meta.url)
       );
 
       const token = localStorage.getItem('infinicam_token') || '';
       const baseUrl = import.meta.env.BASE_URL || '/';
-      worker.postMessage({ type: 'load', url, token, baseUrl });
+      this._worker.postMessage({ type: 'load', url, token, baseUrl });
 
-      worker.onmessage = (e) => {
+      this._worker.onmessage = (e) => {
+        if (this.isDisposed) {
+          this._worker.terminate();
+          this._worker = null;
+          return reject(new Error('Disposed'));
+        }
         const { type, meshData, error, message } = e.data;
         if (type === 'progress' && onProgress) { onProgress(message); return; }
-        if (type === 'error') { worker.terminate(); reject(new Error(error)); return; }
-        if (type === 'done')  { worker.terminate(); this._buildMesh(meshData); resolve(); }
+        if (type === 'error') { this._worker.terminate(); this._worker = null; reject(new Error(error)); return; }
+        if (type === 'done')  { 
+          this._worker.terminate(); 
+          this._worker = null;
+          this._buildMesh(meshData); 
+          resolve(); 
+        }
       };
 
-      worker.onerror = (err) => {
-        worker.terminate();
+      this._worker.onerror = (err) => {
+        this._worker.terminate();
+        this._worker = null;
         reject(new Error(err.message));
       };
     });
@@ -295,9 +308,22 @@ export class Viewer3D {
   }
 
   dispose() {
+    this.isDisposed = true;
+    if (this._worker) {
+      this._worker.terminate();
+      this._worker = null;
+    }
     cancelAnimationFrame(this._rafId);
     this._resizeObserver.disconnect();
     this.controls.dispose();
+    
+    // Forcibly clear WebGL context
+    const gl = this.renderer.getContext();
+    if (gl) {
+      const ext = gl.getExtension('WEBGL_lose_context');
+      if (ext) ext.loseContext();
+    }
+    
     this.renderer.dispose();
   }
 }

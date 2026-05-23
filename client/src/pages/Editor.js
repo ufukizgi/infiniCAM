@@ -221,21 +221,37 @@ export async function renderEditor(container, partId) {
 
   // Initialize 3D viewer
   const canvas = document.getElementById('viewer-canvas');
-  const loadingMsg = document.querySelector('#viewer-loading p');
 
   try {
     viewer = new Viewer3D(canvas);
     window.viewer = viewer; // Expose to global scope for inline onclick handlers
+    
+    // Auto-dispose viewer when Editor is removed from DOM
+    const editorLayout = container.firstElementChild;
+    const observer = new MutationObserver(() => {
+      if (!document.body.contains(editorLayout)) {
+        viewer.dispose();
+        observer.disconnect();
+      }
+    });
+    observer.observe(document.body, { childList: true, subtree: true });
+
     const stpUrl = api.getStpUrl(partId);
 
     await viewer.loadSTP(stpUrl, (msg) => {
+      const loadingMsg = document.querySelector('#viewer-loading p');
       if (loadingMsg) loadingMsg.textContent = msg;
     });
 
-    document.getElementById('viewer-loading').style.display = 'none';
-    canvas.style.display = 'block';
-    document.getElementById('viewer-controls').style.display = 'flex';
-    document.getElementById('status-text').textContent = `${part.displayName} — Ready`;
+    const loadingOverlay = document.getElementById('viewer-loading');
+    if (loadingOverlay) loadingOverlay.style.display = 'none';
+    if (canvas) canvas.style.display = 'block';
+    
+    const controlsMenu = document.getElementById('viewer-controls');
+    if (controlsMenu) controlsMenu.style.display = 'flex';
+    
+    const statusText = document.getElementById('status-text');
+    if (statusText) statusText.textContent = `${part.displayName} — Ready`;
 
     // Capture thumbnail after render
     setTimeout(async () => {
@@ -248,17 +264,24 @@ export async function renderEditor(container, partId) {
     }, 1000);
 
     // Viewer control buttons
-    document.getElementById('btn-reset-cam').addEventListener('click', () => viewer.resetCamera());
-    document.getElementById('btn-wireframe').addEventListener('click', () => viewer.toggleWireframe());
+    const btnReset = document.getElementById('btn-reset-cam');
+    if (btnReset) btnReset.addEventListener('click', () => viewer.resetCamera());
+    
+    const btnWire = document.getElementById('btn-wireframe');
+    if (btnWire) btnWire.addEventListener('click', () => viewer.toggleWireframe());
 
   } catch (err) {
+    if (err.message === 'Disposed') return; // Ignore intentional disposal
     console.error('Viewer error:', err);
-    document.getElementById('viewer-loading').innerHTML = `
-      <div style="text-align:center; padding:24px;">
-        <div style="font-size:2rem; margin-bottom:12px;">⚠️</div>
-        <p class="text-muted text-sm">Could not load 3D model.<br/>${err.message}</p>
-      </div>
-    `;
+    const loadingOverlay = document.getElementById('viewer-loading');
+    if (loadingOverlay) {
+      loadingOverlay.innerHTML = `
+        <div style="text-align:center; padding:24px;">
+          <div style="font-size:2rem; margin-bottom:12px;">⚠️</div>
+          <p class="text-muted text-sm">Could not load 3D model.<br/>${err.message}</p>
+        </div>
+      `;
+    }
   }
 
   // Analyze button (Faz 2)
