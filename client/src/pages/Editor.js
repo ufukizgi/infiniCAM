@@ -338,6 +338,9 @@ export async function renderEditor(container, partId) {
           } else if (feat.type === 'slot') {
             icon = '🔲';
             details = `${feat.width.toFixed(1)} x ${feat.length.toFixed(1)} x ${feat.depth.toFixed(1)}mm`;
+          } else if (feat.type === 'pocket') {
+            icon = '🧊';
+            details = `Pocket: ${feat.width.toFixed(1)} x ${feat.length.toFixed(1)} x ${feat.depth.toFixed(1)}mm (R${feat.radius.toFixed(1)})`;
           } else if (feat.type === 'cut_angled') {
             icon = '📐';
             details = `Angled Saw Cut (Area: ${feat.area})`;

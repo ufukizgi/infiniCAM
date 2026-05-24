@@ -280,6 +280,21 @@ export class Viewer3D {
       const mat4 = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
       mesh.setRotationFromMatrix(mat4);
       
+    } else if (feat.type === 'pocket') {
+      geo = new THREE.BoxGeometry(feat.length, feat.depth, feat.width);
+      mesh = new THREE.Mesh(geo, mat);
+      
+      const drillAxis = new THREE.Vector3(feat.vector[0], feat.vector[1], feat.vector[2]).normalize();
+      const travelAxis = new THREE.Vector3(1, 0, 0);
+      if (Math.abs(drillAxis.dot(travelAxis)) > 0.9) travelAxis.set(0, 1, 0);
+      
+      const yAxis = drillAxis;
+      const xAxis = travelAxis;
+      const zAxis = new THREE.Vector3().crossVectors(xAxis, yAxis).normalize();
+      
+      const mat4 = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
+      mesh.setRotationFromMatrix(mat4);
+
     } else if (feat.type.startsWith('cut')) {
       const size = Math.sqrt(feat.area || 400) * 1.5;
       geo = new THREE.PlaneGeometry(size, size);
