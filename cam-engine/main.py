@@ -27,6 +27,7 @@ def analyze_step(request: AnalyzeRequest):
             
         # Group by direction vector (ignoring sign)
         direction_lengths = {}
+        straight_edges_info = []
         for line in lines:
             # We need the tangent vector of the line
             start = line.startPoint()
@@ -52,6 +53,11 @@ def analyze_step(request: AnalyzeRequest):
                 
             key = f"{nx:.3f},{ny:.3f},{nz:.3f}"
             direction_lengths[key] = direction_lengths.get(key, 0) + length
+            
+            straight_edges_info.append({
+                "length": round(length, 1),
+                "dir": (round(nx, 2), round(ny, 2), round(nz, 2))
+            })
             
         # The extrusion axis is the direction with the maximum total length
         extrusion_axis_str = max(direction_lengths.items(), key=lambda x: x[1])[0]
@@ -194,8 +200,29 @@ def analyze_step(request: AnalyzeRequest):
                 d2 = 10.0
                 min_dist = 999999
                 idx_to_remove = -1
+                
+                # Find the closest valid match
                 for i, (p, d) in enumerate(positions_with_depth):
                     dist = math.dist(p1, p)
+                    
+                    if dist >= 0.1:
+                        # Verify if this pairing is a valid slot by checking for a matching straight edge
+                        tv = [p[0]-p1[0], p[1]-p1[1], p[2]-p1[2]]
+                        tx, ty, tz = tv[0]/dist, tv[1]/dist, tv[2]/dist
+                        if tx < 0 or (tx == 0 and ty < 0) or (tx == 0 and ty == 0 and tz < 0):
+                            tx, ty, tz = -tx, -ty, -tz
+                        tdir = (round(tx, 2), round(ty, 2), round(tz, 2))
+                        
+                        matched = False
+                        for info in straight_edges_info:
+                            if abs(info["length"] - round(dist, 1)) <= 0.2:
+                                if info["dir"] == tdir:
+                                    matched = True
+                                    break
+                                    
+                        if not matched:
+                            continue # Not a valid slot, skip this pairing
+                            
                     if dist < min_dist:
                         min_dist = dist
                         p2 = p
@@ -232,9 +259,9 @@ def analyze_step(request: AnalyzeRequest):
                         })
                         idx_counter += 1
                     else:
-                        break # Too far
+                        continue
                 else:
-                    break
+                    continue
 
         # Process pocket corners (groups of 4)
         for key, positions_with_depth in quarter_cyls.items():
@@ -248,11 +275,22 @@ def analyze_step(request: AnalyzeRequest):
                 depth_groups[depth_val].append((p, d))
                 
             for depth_val, group_pts in depth_groups.items():
-                if len(group_pts) >= 4:
-                    xs = [p[0] for p, d in group_pts]
-                    ys = [p[1] for p, d in group_pts]
-                    zs = [p[2] for p, d in group_pts]
-                    max_depth = max([d for p, d in group_pts])
+                pts = list(group_pts)
+                while len(pts) >= 4:
+                    p1, d1 = pts.pop(0)
+                    # sort remaining by distance to p1
+                    pts.sort(key=lambda item: math.dist(p1, item[0]))
+                    
+                    p2, d2 = pts.pop(0)
+                    p3, d3 = pts.pop(0)
+                    p4, d4 = pts.pop(0)
+                    
+                    pocket_pts = [(p1,d1), (p2,d2), (p3,d3), (p4,d4)]
+                    
+                    xs = [p[0] for p, d in pocket_pts]
+                    ys = [p[1] for p, d in pocket_pts]
+                    zs = [p[2] for p, d in pocket_pts]
+                    max_depth = max([d for p, d in pocket_pts])
                     
                     center_pos = [
                         round((min(xs) + max(xs)) / 2, 3),
