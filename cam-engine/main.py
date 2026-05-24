@@ -73,7 +73,7 @@ def analyze_step(request: AnalyzeRequest):
         features = []
         idx_counter = 0
         
-        for f in solid.Faces():
+        for f in part.faces().vals():
             geom_type = f.geomType()
             
             w_x, w_y, w_z = 10.0, 10.0, 10.0 # Default dimensions
@@ -189,15 +189,6 @@ def analyze_step(request: AnalyzeRequest):
                 except:
                     pass
                     
-        # Filter duplicate features
-        unique_features = []
-        seen_locs = set()
-        for f in features:
-            loc_key = f"{f['type']}_{f['position'][0]:.1f},{f['position'][1]:.1f},{f['position'][2]:.1f}"
-            if loc_key not in seen_locs:
-                seen_locs.add(loc_key)
-                unique_features.append(f)
-                
         # 4. Generate SVG Cross Section
         svg_opts = {
             "projectionDir": tuple(extrusion_axis),
@@ -310,7 +301,7 @@ def analyze_step(request: AnalyzeRequest):
             svg_str = cq.exporters.getSVG(solid, opts=svg_opts)
                 
         # Sort features by X coordinate ascending
-        unique_features.sort(key=lambda f: f['position'][0])
+        features.sort(key=lambda f: f['position'][0])
 
         return {
             "success": True,
@@ -318,7 +309,7 @@ def analyze_step(request: AnalyzeRequest):
                 "name": axis_name,
                 "vector": extrusion_axis
             },
-            "features": unique_features,
+            "features": features,
             "cross_section_svg": svg_str
         }
 
