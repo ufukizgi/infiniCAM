@@ -306,8 +306,59 @@ def analyze_step(request: AnalyzeRequest):
                         })
                         idx_counter += 1
                         continue
-                    elif len(unique_pos) < 4:
-                        # 2 or 3 unique positions means it's a grouping of broken holes, not a pocket
+                    elif len(unique_pos) == 2:
+                        # 2 unique positions could be a round-ended slot split into 4 quarter-cylinders
+                        up1, up2 = unique_pos
+                        dist = math.dist(up1, up2)
+                        
+                        # Verify if this is a slot by checking straight edges
+                        if dist >= 0.1:
+                            tv = [up2[0]-up1[0], up2[1]-up1[1], up2[2]-up1[2]]
+                            tx, ty, tz = tv[0]/dist, tv[1]/dist, tv[2]/dist
+                            if tx < 0 or (tx == 0 and ty < 0) or (tx == 0 and ty == 0 and tz < 0):
+                                tx, ty, tz = -tx, -ty, -tz
+                            tdir = (round(tx, 2), round(ty, 2), round(tz, 2))
+                            
+                            matched = False
+                            for info in straight_edges_info:
+                                if abs(info["length"] - round(dist, 1)) <= 0.2:
+                                    if info["dir"] == tdir:
+                                        matched = True
+                                        break
+                                        
+                            if matched:
+                                # It's a slot!
+                                center_pos = [(up1[0]+up2[0])/2, (up1[1]+up2[1])/2, (up1[2]+up2[2])/2]
+                                features.append({
+                                    "id": f"slot_{idx_counter}",
+                                    "type": "slot",
+                                    "radius": radius,
+                                    "width": radius * 2,
+                                    "length": dist + (radius * 2),
+                                    "travel": dist,
+                                    "depth": max_depth,
+                                    "position": [round(c, 3) for c in center_pos],
+                                    "p1": up1,
+                                    "p2": up2,
+                                    "vector": [dx, dy, dz]
+                                })
+                                idx_counter += 1
+                                continue
+                                
+                        # If not a slot, output them as drills
+                        for up in unique_pos:
+                            features.append({
+                                "id": f"drill_{idx_counter}",
+                                "type": "drill",
+                                "radius": radius,
+                                "depth": max_depth,
+                                "position": up,
+                                "vector": [dx, dy, dz]
+                            })
+                            idx_counter += 1
+                        continue
+                    elif len(unique_pos) == 3:
+                        # 3 unique positions means a pocket missing a corner, or broken drills.
                         # Output them as drills to salvage them
                         for up in unique_pos:
                             features.append({
@@ -350,6 +401,18 @@ def analyze_step(request: AnalyzeRequest):
                         "length": round(l, 1),
                         "depth": max_depth,
                         "position": center_pos,
+                        "vector": [dx, dy, dz]
+                    })
+                    idx_counter += 1
+                    
+                # Salvage any leftover points that didn't form a group of 4
+                for p, d in pts:
+                    features.append({
+                        "id": f"drill_{idx_counter}",
+                        "type": "drill",
+                        "radius": radius,
+                        "depth": d,
+                        "position": p,
                         "vector": [dx, dy, dz]
                     })
                     idx_counter += 1
