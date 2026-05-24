@@ -287,10 +287,42 @@ def analyze_step(request: AnalyzeRequest):
                     
                     pocket_pts = [(p1,d1), (p2,d2), (p3,d3), (p4,d4)]
                     
+                    # Verify unique positions to prevent grouping broken holes
+                    unique_pos = []
+                    for p, d in pocket_pts:
+                        if not any(math.dist(p, up) < 0.1 for up in unique_pos):
+                            unique_pos.append(p)
+                            
+                    if len(unique_pos) == 1:
+                        # All 4 corners at same spot -> it's a drill
+                        features.append({
+                            "id": f"drill_{idx_counter}",
+                            "type": "drill",
+                            "radius": radius,
+                            "depth": max_depth,
+                            "position": unique_pos[0],
+                            "vector": [dx, dy, dz]
+                        })
+                        idx_counter += 1
+                        continue
+                    elif len(unique_pos) < 4:
+                        # 2 or 3 unique positions means it's a grouping of broken holes, not a pocket
+                        # Output them as drills to salvage them
+                        for up in unique_pos:
+                            features.append({
+                                "id": f"drill_{idx_counter}",
+                                "type": "drill",
+                                "radius": radius,
+                                "depth": max_depth,
+                                "position": up,
+                                "vector": [dx, dy, dz]
+                            })
+                            idx_counter += 1
+                        continue
+                        
                     xs = [p[0] for p, d in pocket_pts]
                     ys = [p[1] for p, d in pocket_pts]
                     zs = [p[2] for p, d in pocket_pts]
-                    max_depth = max([d for p, d in pocket_pts])
                     
                     center_pos = [
                         round((min(xs) + max(xs)) / 2, 3),
@@ -298,23 +330,23 @@ def analyze_step(request: AnalyzeRequest):
                         round((min(zs) + max(zs)) / 2, 3)
                     ]
                     
-                    # Compute width/length
+                    # Compute width/length matching Viewer3D axes
                     if abs(dx) > 0.99:
-                        w = max(ys) - min(ys) + radius*2
-                        l = max(zs) - min(zs) + radius*2
-                    elif abs(dy) > 0.99:
-                        w = max(xs) - min(xs) + radius*2
-                        l = max(zs) - min(zs) + radius*2
-                    else: # dz > 0.99
-                        w = max(xs) - min(xs) + radius*2
                         l = max(ys) - min(ys) + radius*2
+                        w = max(zs) - min(zs) + radius*2
+                    elif abs(dy) > 0.99:
+                        l = max(xs) - min(xs) + radius*2
+                        w = max(zs) - min(zs) + radius*2
+                    else: # dz > 0.99
+                        l = max(xs) - min(xs) + radius*2
+                        w = max(ys) - min(ys) + radius*2
                         
                     features.append({
                         "id": f"pocket_{idx_counter}",
                         "type": "pocket",
                         "radius": radius,
-                        "width": round(min(w, l), 1),
-                        "length": round(max(w, l), 1),
+                        "width": round(w, 1),
+                        "length": round(l, 1),
                         "depth": max_depth,
                         "position": center_pos,
                         "vector": [dx, dy, dz]
