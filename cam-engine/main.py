@@ -76,6 +76,9 @@ def analyze_step(request: AnalyzeRequest):
         for f in solid.Faces():
             geom_type = f.geomType()
             
+            w_x, w_y, w_z = 10.0, 10.0, 10.0 # Default dimensions
+            c_pos = [0, 0, 0]
+            
             try:
                 bbox = f.BoundingBox()
                 w_x = bbox.xmax - bbox.xmin
@@ -84,8 +87,13 @@ def analyze_step(request: AnalyzeRequest):
                 c_pos = [round((bbox.xmin + bbox.xmax)/2, 3), 
                          round((bbox.ymin + bbox.ymax)/2, 3), 
                          round((bbox.zmin + bbox.zmax)/2, 3)]
-            except Exception as e:
-                continue
+            except:
+                # If bounding box fails, try to just get a point on the surface
+                try:
+                    loc = f.Center()
+                    c_pos = [round(loc.x, 3), round(loc.y, 3), round(loc.z, 3)]
+                except:
+                    pass
                 
             if geom_type == "CYLINDER":
                 try:
@@ -99,8 +107,26 @@ def analyze_step(request: AnalyzeRequest):
                     if mag > 0:
                         dir_vec = [d/mag for d in dir_vec]
                     
-                    # Calculate depth (approx)
-                    depth = max(w_x, w_y, w_z)
+                    # Calculate depth accurately from straight edges
+                    straight_edges = [e for e in f.Edges() if e.geomType() in ["LINE", "BSPLINE"]]
+                    if straight_edges:
+                        depth = max(e.Length() for e in straight_edges)
+                    else:
+                        depth = 10.0
+                        
+                    # Calculate true midpoint by projecting face center onto axis
+                    loc = surf.Location()
+                    try:
+                        pc = f.Center()
+                        vx, vy, vz = pc.x - loc.X(), pc.y - loc.Y(), pc.z - loc.Z()
+                        dist = vx*dir_vec[0] + vy*dir_vec[1] + vz*dir_vec[2]
+                        c_pos = [
+                            round(loc.X() + dir_vec[0]*dist, 3),
+                            round(loc.Y() + dir_vec[1]*dist, 3),
+                            round(loc.Z() + dir_vec[2]*dist, 3)
+                        ]
+                    except:
+                        pass # Fallback to c_pos from bbox
                     
                     features.append({
                         "id": f"face_{idx_counter}_CYL",
