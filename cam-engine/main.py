@@ -70,7 +70,10 @@ def analyze_step(request: AnalyzeRequest):
         edge_to_faces = {}
         for f in solid.Faces():
             for e in f.Edges():
-                ekey = e.hashCode()
+                try:
+                    ekey = e.hashCode()
+                except AttributeError:
+                    ekey = hash(e)
                 if ekey not in edge_to_faces: edge_to_faces[ekey] = []
                 edge_to_faces[ekey].append(f)
                 
@@ -139,21 +142,25 @@ def analyze_step(request: AnalyzeRequest):
                     # Mark slot walls
                     straight_edges = [e for e in cyl.Edges() if e.geomType() in ["LINE", "BSPLINE"]]
                     for e in straight_edges:
-                        faces = edge_to_faces.get(e.hashCode(), [])
+                        faces = edge_to_faces.get(e.hashCode() if hasattr(e, 'hashCode') else hash(e), [])
                         for f2 in faces:
                             if f2 != cyl and f2.geomType() == "PLANE":
-                                slot_wall_faces.add(f2.hashCode())
+                                slot_wall_faces.add(f2.hashCode() if hasattr(f2, 'hashCode') else hash(f2))
                 elif abs(arc_len - expected_quarter) < 0.15 * r:
                     is_quarter = True
                     # Mark pocket walls
                     straight_edges = [e for e in cyl.Edges() if e.geomType() in ["LINE", "BSPLINE"]]
                     for e in straight_edges:
-                        faces = edge_to_faces.get(e.hashCode(), [])
+                        faces = edge_to_faces.get(e.hashCode() if hasattr(e, 'hashCode') else hash(e), [])
                         for f2 in faces:
                             if f2 != cyl and f2.geomType() == "PLANE":
-                                slot_wall_faces.add(f2.hashCode())
+                                slot_wall_faces.add(f2.hashCode() if hasattr(f2, 'hashCode') else hash(f2))
                 else:
                     continue # Partial feature
+                    
+                # Calculate actual depth from straight edges
+                straight_edges_len = [e.Length() for e in cyl.Edges() if e.geomType() in ["LINE", "BSPLINE"]]
+                actual_depth = round(max(straight_edges_len), 1) if straight_edges_len else 10.0
                     
                 key = f"{r}_{dx:.2f}_{dy:.2f}_{dz:.2f}"
                 
@@ -164,49 +171,51 @@ def analyze_step(request: AnalyzeRequest):
                             "id": f"drill_{idx_counter}",
                             "type": "drill",
                             "radius": r,
-                            "depth": 10.0,
+                            "depth": actual_depth,
                             "position": pos,
                             "vector": [dx, dy, dz]
                         })
                         idx_counter += 1
                 elif is_half:
                     if key not in cyl_groups: cyl_groups[key] = []
-                    if pos not in cyl_groups[key]:
-                        cyl_groups[key].append(pos)
+                    cyl_groups[key].append((pos, actual_depth))
                 elif is_quarter:
                     if key not in quarter_cyls: quarter_cyls[key] = []
-                    if pos not in quarter_cyls[key]:
-                        quarter_cyls[key].append(pos)
+                    quarter_cyls[key].append((pos, actual_depth))
 
         # Process slot pairs
-        for key, positions in cyl_groups.items():
+        for key, positions_with_depth in cyl_groups.items():
             radius = float(key.split('_')[0])
             dx, dy, dz = [float(x) for x in key.split('_')[1:]]
             
-            while len(positions) >= 2:
-                p1 = positions.pop(0)
+            while len(positions_with_depth) >= 2:
+                p1, d1 = positions_with_depth.pop(0)
                 p2 = None
+                d2 = 10.0
                 min_dist = 999999
-                for p in positions:
-                    d = math.dist(p1, p)
-                    if d < min_dist:
-                        min_dist = d
+                idx_to_remove = -1
+                for i, (p, d) in enumerate(positions_with_depth):
+                    dist = math.dist(p1, p)
+                    if dist < min_dist:
+                        min_dist = dist
                         p2 = p
+                        d2 = d
+                        idx_to_remove = i
                 
                 if p2:
                     if min_dist < 0.1: # Split drill (two halves on same center)
-                        positions.remove(p2)
+                        positions_with_depth.pop(idx_to_remove)
                         features.append({
                             "id": f"drill_{idx_counter}",
                             "type": "drill",
                             "radius": radius,
-                            "depth": 10.0,
+                            "depth": max(d1, d2),
                             "position": p1,
                             "vector": [dx, dy, dz]
                         })
                         idx_counter += 1
                     elif min_dist < 400: # Found a slot
-                        positions.remove(p2)
+                        positions_with_depth.pop(idx_to_remove)
                         center_pos = [(p1[0]+p2[0])/2, (p1[1]+p2[1])/2, (p1[2]+p2[2])/2]
                         features.append({
                             "id": f"slot_{idx_counter}",
@@ -215,7 +224,7 @@ def analyze_step(request: AnalyzeRequest):
                             "width": radius * 2,
                             "length": min_dist + (radius * 2), # Total length
                             "travel": min_dist,
-                            "depth": 10.0,
+                            "depth": max(d1, d2),
                             "position": [round(c, 3) for c in center_pos],
                             "p1": p1,
                             "p2": p2,
@@ -228,21 +237,22 @@ def analyze_step(request: AnalyzeRequest):
                     break
 
         # Process pocket corners (groups of 4)
-        for key, positions in quarter_cyls.items():
+        for key, positions_with_depth in quarter_cyls.items():
             radius = float(key.split('_')[0])
             dx, dy, dz = [float(x) for x in key.split('_')[1:]]
             
             depth_groups = {}
-            for p in positions:
+            for p, d in positions_with_depth:
                 depth_val = round(p[0]*dx + p[1]*dy + p[2]*dz, 1)
                 if depth_val not in depth_groups: depth_groups[depth_val] = []
-                depth_groups[depth_val].append(p)
+                depth_groups[depth_val].append((p, d))
                 
             for depth_val, group_pts in depth_groups.items():
                 if len(group_pts) >= 4:
-                    xs = [p[0] for p in group_pts]
-                    ys = [p[1] for p in group_pts]
-                    zs = [p[2] for p in group_pts]
+                    xs = [p[0] for p, d in group_pts]
+                    ys = [p[1] for p, d in group_pts]
+                    zs = [p[2] for p, d in group_pts]
+                    max_depth = max([d for p, d in group_pts])
                     
                     center_pos = [
                         round((min(xs) + max(xs)) / 2, 3),
@@ -251,11 +261,15 @@ def analyze_step(request: AnalyzeRequest):
                     ]
                     
                     # Compute width/length
-                    w = max(xs) - min(xs) + radius*2
-                    l = max(ys) - min(ys) + radius*2
-                    if dx > 0.99:
+                    if abs(dx) > 0.99:
                         w = max(ys) - min(ys) + radius*2
                         l = max(zs) - min(zs) + radius*2
+                    elif abs(dy) > 0.99:
+                        w = max(xs) - min(xs) + radius*2
+                        l = max(zs) - min(zs) + radius*2
+                    else: # dz > 0.99
+                        w = max(xs) - min(xs) + radius*2
+                        l = max(ys) - min(ys) + radius*2
                         
                     features.append({
                         "id": f"pocket_{idx_counter}",
@@ -263,7 +277,7 @@ def analyze_step(request: AnalyzeRequest):
                         "radius": radius,
                         "width": round(min(w, l), 1),
                         "length": round(max(w, l), 1),
-                        "depth": 10.0,
+                        "depth": max_depth,
                         "position": center_pos,
                         "vector": [dx, dy, dz]
                     })
@@ -272,7 +286,8 @@ def analyze_step(request: AnalyzeRequest):
         # 3.2 Detect End Cuts (Flat and Angled Saw Cuts)
         planes = [f for f in solid.Faces() if f.geomType() == "PLANE"]
         for idx, p in enumerate(planes):
-            if p.hashCode() in slot_wall_faces:
+            pkey = p.hashCode() if hasattr(p, 'hashCode') else hash(p)
+            if pkey in slot_wall_faces:
                 continue # Ignore slot walls
                 
             loc = p.Center()
