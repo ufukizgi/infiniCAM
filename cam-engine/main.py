@@ -144,7 +144,25 @@ def analyze_step(request: AnalyzeRequest):
                     })
                     idx_counter += 1
                 except:
-                    pass    # Filter duplicate features (not needed since we already unique'd in grouping, but safe for cuts)
+                    pass
+            else:
+                try:
+                    features.append({
+                        "id": f"face_{idx_counter}_{geom_type}",
+                        "type": "pocket",
+                        "radius": 0,
+                        "width": round(max(w_y, w_z), 1),
+                        "length": round(max(w_x, w_z), 1),
+                        "depth": 1,
+                        "position": c_pos,
+                        "vector": [0, 0, 1],
+                        "userNote": f"Raw {geom_type} Face"
+                    })
+                    idx_counter += 1
+                except:
+                    pass
+                    
+        # Filter duplicate features
         unique_features = []
         seen_locs = set()
         for f in features:
