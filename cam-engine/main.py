@@ -262,7 +262,7 @@ def analyze_step(request: AnalyzeRequest):
                 if len(attached_planes) >= 2:
                     all_vs = []
                     for p_face in attached_planes:
-                        all_vs.extend([(v.X(), v.Y(), v.Z()) for v in p_face.Vertices()])
+                        all_vs.extend([(v.X, v.Y, v.Z) for v in p_face.Vertices()])
                         
                     c_x = (max(v[0] for v in all_vs) + min(v[0] for v in all_vs)) / 2
                     c_y = (max(v[1] for v in all_vs) + min(v[1] for v in all_vs)) / 2
@@ -331,7 +331,7 @@ def analyze_step(request: AnalyzeRequest):
                 if len(attached_planes) >= 2:
                     all_vs = []
                     for p_face in attached_planes:
-                        all_vs.extend([(v.X(), v.Y(), v.Z()) for v in p_face.Vertices()])
+                        all_vs.extend([(v.X, v.Y, v.Z) for v in p_face.Vertices()])
                         
                     c_x = (max(v[0] for v in all_vs) + min(v[0] for v in all_vs)) / 2
                     c_y = (max(v[1] for v in all_vs) + min(v[1] for v in all_vs)) / 2
