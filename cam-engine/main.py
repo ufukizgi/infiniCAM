@@ -184,10 +184,10 @@ def analyze_step(request: AnalyzeRequest):
                         idx_counter += 1
                 elif is_half:
                     if key not in cyl_groups: cyl_groups[key] = []
-                    cyl_groups[key].append((pos, actual_depth))
+                    cyl_groups[key].append((pos, actual_depth, cyl))
                 elif is_quarter:
                     if key not in quarter_cyls: quarter_cyls[key] = []
-                    quarter_cyls[key].append((pos, actual_depth))
+                    quarter_cyls[key].append((pos, actual_depth, cyl))
 
         # Process slot pairs
         for key, positions_with_depth in cyl_groups.items():
@@ -195,14 +195,14 @@ def analyze_step(request: AnalyzeRequest):
             dx, dy, dz = [float(x) for x in key.split('_')[1:]]
             
             while len(positions_with_depth) >= 2:
-                p1, d1 = positions_with_depth.pop(0)
+                p1, d1, cyl1 = positions_with_depth.pop(0)
                 p2 = None
                 d2 = 10.0
                 min_dist = 999999
                 idx_to_remove = -1
                 
                 # Find the closest valid match
-                for i, (p, d) in enumerate(positions_with_depth):
+                for i, (p, d, cyl_other) in enumerate(positions_with_depth):
                     dist = math.dist(p1, p)
                     
                     if dist >= 0.1:
@@ -248,117 +248,141 @@ def analyze_step(request: AnalyzeRequest):
                 else:
                     continue
 
-        # Process pocket corners (groups of 4)
-        for key, positions_with_depth in quarter_cyls.items():
-            radius = float(key.split('_')[0])
-            dx, dy, dz = [float(x) for x in key.split('_')[1:]]
-            
-            depth_groups = {}
-            for p, d in positions_with_depth:
-                depth_val = round(p[0]*dx + p[1]*dy + p[2]*dz, 1)
-                if depth_val not in depth_groups: depth_groups[depth_val] = []
-                depth_groups[depth_val].append((p, d))
+            # Salvage leftover half-cylinders (Open U-Slots) using Face Adjacency
+            for p, d, cyl in positions_with_depth:
+                straight_edges = [e for e in cyl.Edges() if e.geomType() in ["LINE", "BSPLINE"]]
+                attached_planes = []
+                for e in straight_edges:
+                    ekey = e.hashCode() if hasattr(e, 'hashCode') else hash(e)
+                    faces = edge_to_faces.get(ekey, [])
+                    for f2 in faces:
+                        if f2 != cyl and f2.geomType() == "PLANE":
+                            attached_planes.append(f2)
                 
-            for depth_val, group_pts in depth_groups.items():
-                pts = list(group_pts)
-                while len(pts) >= 4:
-                    p1, d1 = pts.pop(0)
-                    # sort remaining by distance to p1
-                    pts.sort(key=lambda item: math.dist(p1, item[0]))
-                    
-                    p2, d2 = pts.pop(0)
-                    p3, d3 = pts.pop(0)
-                    p4, d4 = pts.pop(0)
-                    
-                    pocket_pts = [(p1,d1), (p2,d2), (p3,d3), (p4,d4)]
-                    max_depth = max([d for p, d in pocket_pts])
-                    
-                    # Verify unique positions to prevent grouping broken holes
-                    unique_pos = []
-                    for p, d in pocket_pts:
-                        if not any(math.dist(p, up) < 0.1 for up in unique_pos):
-                            unique_pos.append(p)
-                            
-                    if len(unique_pos) == 1:
-                        # All 4 corners at same spot -> it's a drill
-                        features.append({
-                            "id": f"drill_{idx_counter}",
-                            "type": "drill",
-                            "radius": radius,
-                            "depth": max_depth,
-                            "position": unique_pos[0],
-                            "vector": [dx, dy, dz]
-                        })
-                        idx_counter += 1
-                        continue
-                    elif len(unique_pos) == 2:
-                        # 2 unique positions could be a round-ended slot split into 4 quarter-cylinders
-                        up1, up2 = unique_pos
-                        dist = math.dist(up1, up2)
+                if len(attached_planes) >= 2:
+                    all_vs = []
+                    for p_face in attached_planes:
+                        all_vs.extend([(v.X(), v.Y(), v.Z()) for v in p_face.Vertices()])
                         
-                        # Trust the pairing for slots with 4 quarter-cylinders
-                        center_pos = [(up1[0]+up2[0])/2, (up1[1]+up2[1])/2, (up1[2]+up2[2])/2]
+                    c_x = (max(v[0] for v in all_vs) + min(v[0] for v in all_vs)) / 2
+                    c_y = (max(v[1] for v in all_vs) + min(v[1] for v in all_vs)) / 2
+                    c_z = (max(v[2] for v in all_vs) + min(v[2] for v in all_vs)) / 2
+                    center_pos = [round(c_x, 3), round(c_y, 3), round(c_z, 3)]
+                    
+                    w_x = max(v[0] for v in all_vs) - min(v[0] for v in all_vs)
+                    w_y = max(v[1] for v in all_vs) - min(v[1] for v in all_vs)
+                    w_z = max(v[2] for v in all_vs) - min(v[2] for v in all_vs)
+                    
+                    if abs(dx) > 0.99:
+                        travel_dist = w_z if abs(w_y - radius*2) < 0.2 else w_y
+                    elif abs(dy) > 0.99:
+                        travel_dist = w_z if abs(w_x - radius*2) < 0.2 else w_x
+                    else: # dz > 0.99
+                        travel_dist = w_y if abs(w_x - radius*2) < 0.2 else w_x
+                        
+                    duplicate = False
+                    for f in features:
+                        if f["type"] == "slot" and math.dist(f["position"], center_pos) < 0.1:
+                            duplicate = True
+                            break
+                            
+                    if not duplicate and travel_dist > 0:
                         features.append({
                             "id": f"slot_{idx_counter}",
                             "type": "slot",
                             "radius": radius,
                             "width": radius * 2,
-                            "length": dist + (radius * 2),
-                            "travel": dist,
-                            "depth": max_depth,
-                            "position": [round(c, 3) for c in center_pos],
-                            "p1": up1,
-                            "p2": up2,
+                            "length": round(travel_dist + (radius * 2), 1),
+                            "travel": round(travel_dist, 1),
+                            "depth": d,
+                            "position": center_pos,
+                            "p1": p,
+                            "p2": p,
                             "vector": [dx, dy, dz]
                         })
                         idx_counter += 1
                         continue
                         
-                    # 3 or 4 unique positions form a valid pocket
-                    xs = [p[0] for p in unique_pos]
-                    ys = [p[1] for p in unique_pos]
-                    zs = [p[2] for p in unique_pos]
-                    
-                    center_pos = [
-                        round((min(xs) + max(xs)) / 2, 3),
-                        round((min(ys) + max(ys)) / 2, 3),
-                        round((min(zs) + max(zs)) / 2, 3)
-                    ]
-                    
-                    # Compute width/length matching Viewer3D axes
-                    if abs(dx) > 0.99:
-                        l = max(ys) - min(ys) + radius*2
-                        w = max(zs) - min(zs) + radius*2
-                    elif abs(dy) > 0.99:
-                        l = max(xs) - min(xs) + radius*2
-                        w = max(zs) - min(zs) + radius*2
-                    else: # dz > 0.99
-                        l = max(xs) - min(xs) + radius*2
-                        w = max(ys) - min(ys) + radius*2
+                features.append({
+                    "id": f"drill_{idx_counter}",
+                    "type": "drill",
+                    "radius": radius,
+                    "depth": d,
+                    "position": p,
+                    "vector": [dx, dy, dz]
+                })
+                idx_counter += 1
+
+        # Process pocket corners (Face Adjacency Tracking)
+        for key, positions_with_depth in quarter_cyls.items():
+            radius = float(key.split('_')[0])
+            dx, dy, dz = [float(x) for x in key.split('_')[1:]]
+            
+            for p, d, cyl in positions_with_depth:
+                straight_edges = [e for e in cyl.Edges() if e.geomType() in ["LINE", "BSPLINE"]]
+                attached_planes = []
+                for e in straight_edges:
+                    ekey = e.hashCode() if hasattr(e, 'hashCode') else hash(e)
+                    faces = edge_to_faces.get(ekey, [])
+                    for f2 in faces:
+                        if f2 != cyl and f2.geomType() == "PLANE":
+                            attached_planes.append(f2)
+                            
+                if len(attached_planes) >= 2:
+                    all_vs = []
+                    for p_face in attached_planes:
+                        all_vs.extend([(v.X(), v.Y(), v.Z()) for v in p_face.Vertices()])
                         
-                    features.append({
-                        "id": f"pocket_{idx_counter}",
-                        "type": "pocket",
-                        "radius": radius,
-                        "width": round(w, 1),
-                        "length": round(l, 1),
-                        "depth": max_depth,
-                        "position": center_pos,
-                        "vector": [dx, dy, dz]
-                    })
-                    idx_counter += 1
+                    c_x = (max(v[0] for v in all_vs) + min(v[0] for v in all_vs)) / 2
+                    c_y = (max(v[1] for v in all_vs) + min(v[1] for v in all_vs)) / 2
+                    c_z = (max(v[2] for v in all_vs) + min(v[2] for v in all_vs)) / 2
+                    center_pos = [round(c_x, 3), round(c_y, 3), round(c_z, 3)]
                     
-                # Salvage any leftover points that didn't form a group of 4
-                for p, d in pts:
-                    features.append({
-                        "id": f"drill_{idx_counter}",
-                        "type": "drill",
-                        "radius": radius,
-                        "depth": d,
-                        "position": p,
-                        "vector": [dx, dy, dz]
-                    })
-                    idx_counter += 1
+                    w_x = max(v[0] for v in all_vs) - min(v[0] for v in all_vs)
+                    w_y = max(v[1] for v in all_vs) - min(v[1] for v in all_vs)
+                    w_z = max(v[2] for v in all_vs) - min(v[2] for v in all_vs)
+                    
+                    if abs(dx) > 0.99:
+                        l = w_y
+                        w = w_z
+                    elif abs(dy) > 0.99:
+                        l = w_x
+                        w = w_z
+                    else: # dz > 0.99
+                        l = w_x
+                        w = w_y
+                        
+                    duplicate = False
+                    for f in features:
+                        # Match center position with 0.1 tolerance
+                        if f["type"] == "pocket" and math.dist(f["position"], center_pos) < 0.1:
+                            duplicate = True
+                            break
+                            
+                    if not duplicate and l > 0 and w > 0:
+                        features.append({
+                            "id": f"pocket_{idx_counter}",
+                            "type": "pocket",
+                            "radius": radius,
+                            "width": round(min(w, l), 1),
+                            "length": round(max(w, l), 1),
+                            "depth": d,
+                            "position": center_pos,
+                            "vector": [dx, dy, dz]
+                        })
+                        idx_counter += 1
+                        continue
+                        
+                # Fallback to drill if no walls found (e.g. standalone quarter cylinder)
+                features.append({
+                    "id": f"drill_{idx_counter}",
+                    "type": "drill",
+                    "radius": radius,
+                    "depth": d,
+                    "position": p,
+                    "vector": [dx, dy, dz]
+                })
+                idx_counter += 1
 
         # 3.2 Detect End Cuts (Flat and Angled Saw Cuts)
         planes = [f for f in solid.Faces() if f.geomType() == "PLANE"]
