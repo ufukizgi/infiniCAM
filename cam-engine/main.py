@@ -206,22 +206,7 @@ def analyze_step(request: AnalyzeRequest):
                     dist = math.dist(p1, p)
                     
                     if dist >= 0.1:
-                        # Verify if this pairing is a valid slot by checking for a matching straight edge
-                        tv = [p[0]-p1[0], p[1]-p1[1], p[2]-p1[2]]
-                        tx, ty, tz = tv[0]/dist, tv[1]/dist, tv[2]/dist
-                        if tx < 0 or (tx == 0 and ty < 0) or (tx == 0 and ty == 0 and tz < 0):
-                            tx, ty, tz = -tx, -ty, -tz
-                        tdir = (round(tx, 2), round(ty, 2), round(tz, 2))
-                        
-                        matched = False
-                        for info in straight_edges_info:
-                            if abs(info["length"] - round(dist, 1)) <= 0.2:
-                                if info["dir"] == tdir:
-                                    matched = True
-                                    break
-                                    
-                        if not matched:
-                            continue # Not a valid slot, skip this pairing
+                        pass # Trust the pairing based on proximity for intersected slots
                             
                     if dist < min_dist:
                         min_dist = dist
@@ -311,51 +296,22 @@ def analyze_step(request: AnalyzeRequest):
                         up1, up2 = unique_pos
                         dist = math.dist(up1, up2)
                         
-                        # Verify if this is a slot by checking straight edges
-                        if dist >= 0.1:
-                            tv = [up2[0]-up1[0], up2[1]-up1[1], up2[2]-up1[2]]
-                            tx, ty, tz = tv[0]/dist, tv[1]/dist, tv[2]/dist
-                            if tx < 0 or (tx == 0 and ty < 0) or (tx == 0 and ty == 0 and tz < 0):
-                                tx, ty, tz = -tx, -ty, -tz
-                            tdir = (round(tx, 2), round(ty, 2), round(tz, 2))
-                            
-                            matched = False
-                            for info in straight_edges_info:
-                                if abs(info["length"] - round(dist, 1)) <= 0.2:
-                                    if info["dir"] == tdir:
-                                        matched = True
-                                        break
-                                        
-                            if matched:
-                                # It's a slot!
-                                center_pos = [(up1[0]+up2[0])/2, (up1[1]+up2[1])/2, (up1[2]+up2[2])/2]
-                                features.append({
-                                    "id": f"slot_{idx_counter}",
-                                    "type": "slot",
-                                    "radius": radius,
-                                    "width": radius * 2,
-                                    "length": dist + (radius * 2),
-                                    "travel": dist,
-                                    "depth": max_depth,
-                                    "position": [round(c, 3) for c in center_pos],
-                                    "p1": up1,
-                                    "p2": up2,
-                                    "vector": [dx, dy, dz]
-                                })
-                                idx_counter += 1
-                                continue
-                                
-                        # If not a slot, output them as drills
-                        for up in unique_pos:
-                            features.append({
-                                "id": f"drill_{idx_counter}",
-                                "type": "drill",
-                                "radius": radius,
-                                "depth": max_depth,
-                                "position": up,
-                                "vector": [dx, dy, dz]
-                            })
-                            idx_counter += 1
+                        # Trust the pairing for slots with 4 quarter-cylinders
+                        center_pos = [(up1[0]+up2[0])/2, (up1[1]+up2[1])/2, (up1[2]+up2[2])/2]
+                        features.append({
+                            "id": f"slot_{idx_counter}",
+                            "type": "slot",
+                            "radius": radius,
+                            "width": radius * 2,
+                            "length": dist + (radius * 2),
+                            "travel": dist,
+                            "depth": max_depth,
+                            "position": [round(c, 3) for c in center_pos],
+                            "p1": up1,
+                            "p2": up2,
+                            "vector": [dx, dy, dz]
+                        })
+                        idx_counter += 1
                         continue
                         
                     # 3 or 4 unique positions form a valid pocket
