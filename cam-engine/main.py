@@ -140,7 +140,7 @@ def analyze_step(request: AnalyzeRequest):
                 expected_half = math.pi * r
                 expected_quarter = math.pi * r / 2
                 
-                # 15% tolerance for trimmed shapes
+                # 15% tolerance for full/half, 35% tolerance for quarters to catch trimmed pocket corners
                 if abs(arc_len - expected_full) < 0.15 * r:
                     is_full = True
                 elif abs(arc_len - expected_half) < 0.15 * r:
@@ -152,7 +152,7 @@ def analyze_step(request: AnalyzeRequest):
                         for f2 in faces:
                             if f2 != cyl and f2.geomType() == "PLANE":
                                 slot_wall_faces.add(f2.hashCode() if hasattr(f2, 'hashCode') else hash(f2))
-                elif abs(arc_len - expected_quarter) < 0.15 * r:
+                elif abs(arc_len - expected_quarter) < 0.35 * r:
                     is_quarter = True
                     # Mark pocket walls
                     straight_edges = [e for e in cyl.Edges() if e.geomType() in ["LINE", "BSPLINE"]]
@@ -357,24 +357,11 @@ def analyze_step(request: AnalyzeRequest):
                             })
                             idx_counter += 1
                         continue
-                    elif len(unique_pos) == 3:
-                        # 3 unique positions means a pocket missing a corner, or broken drills.
-                        # Output them as drills to salvage them
-                        for up in unique_pos:
-                            features.append({
-                                "id": f"drill_{idx_counter}",
-                                "type": "drill",
-                                "radius": radius,
-                                "depth": max_depth,
-                                "position": up,
-                                "vector": [dx, dy, dz]
-                            })
-                            idx_counter += 1
-                        continue
                         
-                    xs = [p[0] for p, d in pocket_pts]
-                    ys = [p[1] for p, d in pocket_pts]
-                    zs = [p[2] for p, d in pocket_pts]
+                    # 3 or 4 unique positions form a valid pocket
+                    xs = [p[0] for p in unique_pos]
+                    ys = [p[1] for p in unique_pos]
+                    zs = [p[2] for p in unique_pos]
                     
                     center_pos = [
                         round((min(xs) + max(xs)) / 2, 3),
