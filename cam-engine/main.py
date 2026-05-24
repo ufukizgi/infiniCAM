@@ -286,6 +286,7 @@ def analyze_step(request: AnalyzeRequest):
                     p4, d4 = pts.pop(0)
                     
                     pocket_pts = [(p1,d1), (p2,d2), (p3,d3), (p4,d4)]
+                    max_depth = max([d for p, d in pocket_pts])
                     
                     # Verify unique positions to prevent grouping broken holes
                     unique_pos = []
