@@ -77,13 +77,14 @@ def analyze_step(request: AnalyzeRequest):
             geom_type = f.geomType()
             
             try:
-                loc = f.Center()
-                c_pos = [round(loc.x, 3), round(loc.y, 3), round(loc.z, 3)]
                 bbox = f.BoundingBox()
                 w_x = bbox.xmax - bbox.xmin
                 w_y = bbox.ymax - bbox.ymin
                 w_z = bbox.zmax - bbox.zmin
-            except:
+                c_pos = [round((bbox.xmin + bbox.xmax)/2, 3), 
+                         round((bbox.ymin + bbox.ymax)/2, 3), 
+                         round((bbox.zmin + bbox.zmax)/2, 3)]
+            except Exception as e:
                 continue
                 
             if geom_type == "CYLINDER":
