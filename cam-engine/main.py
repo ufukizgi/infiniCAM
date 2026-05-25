@@ -69,125 +69,149 @@ def analyze_step(request: AnalyzeRequest):
         elif abs(extrusion_axis[1]) > 0.99: axis_name = "Y"
         elif abs(extrusion_axis[2]) > 0.99: axis_name = "Z"
 
-        # 3. DEBUG MODE: Extract ALL faces for visualization
+        # 3. Volumetric Feature Recognition (Boolean Difference)
         features = []
         idx_counter = 0
         
-        for f in part.faces().vals():
-            geom_type = f.geomType()
+        # 3.1 Create Stock Profile by Fusing 31 Slices
+        bounds = solid.BoundingBox()
+        z_min, z_max = 0, 0
+        if axis_name == "X": z_min, z_max = bounds.xmin, bounds.xmax
+        elif axis_name == "Y": z_min, z_max = bounds.ymin, bounds.ymax
+        else: z_min, z_max = bounds.zmin, bounds.zmax
+
+        from OCP.BRepAlgoAPI import BRepAlgoAPI_Fuse, BRepAlgoAPI_Cut
+        from OCP.gp import gp_Trsf, gp_Vec
+        from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
+        import math
+
+        fused_face = None
+        
+        for i in range(31):
+            val = z_min + (z_max - z_min) * (i + 0.5) / 31.0
+            origin = [0, 0, 0]
+            if axis_name == "X": origin[0] = val
+            elif axis_name == "Y": origin[1] = val
+            else: origin[2] = val
             
-            w_x, w_y, w_z = 10.0, 10.0, 10.0 # Default dimensions
-            c_pos = [0, 0, 0]
-            
+            wp = cq.Workplane(cq.Plane(origin=tuple(origin), normal=tuple(extrusion_axis)))
             try:
-                bbox = f.BoundingBox()
-                w_x = bbox.xmax - bbox.xmin
-                w_y = bbox.ymax - bbox.ymin
-                w_z = bbox.zmax - bbox.zmin
+                section = wp.add(solid).section()
+                if section.vals():
+                    wires = sorted(section.vals(), key=lambda w: w.Length(), reverse=True)
+                    f = cq.Face.makeFromWires(wires[0], wires[1:])
+                    
+                    # Project face to z=0 (or val=0) along extrusion axis
+                    trsf = gp_Trsf()
+                    vec = [-origin[0], -origin[1], -origin[2]]
+                    trsf.SetTranslation(gp_Vec(*vec))
+                    moved_f = BRepBuilderAPI_Transform(f.wrapped, trsf, True).Shape()
+                    
+                    if fused_face is None:
+                        fused_face = moved_f
+                    else:
+                        fused_face = BRepAlgoAPI_Fuse(fused_face, moved_f).Shape()
+            except Exception as e:
+                pass
+                
+        if fused_face:
+            # 3.2 Create 3D Stock Solid
+            base_face = cq.Face(fused_face)
+            
+            # Move the base face to z_min
+            trsf = gp_Trsf()
+            vec_min = [extrusion_axis[0]*z_min, extrusion_axis[1]*z_min, extrusion_axis[2]*z_min]
+            trsf.SetTranslation(gp_Vec(*vec_min))
+            base_face = cq.Face(BRepBuilderAPI_Transform(base_face.wrapped, trsf, True).Shape())
+            
+            # Extrude the face to full length
+            extrude_vec = cq.Vector(extrusion_axis[0]*(z_max-z_min), extrusion_axis[1]*(z_max-z_min), extrusion_axis[2]*(z_max-z_min))
+            stock = cq.Solid.extrudeLinear(base_face, extrude_vec)
+            
+            # 3.3 Boolean Subtraction (Stock - Part = Machining Volumes)
+            cut_algo = BRepAlgoAPI_Cut(stock.wrapped, solid.wrapped)
+            cut_algo.Build()
+            chips_shape = cut_algo.Shape()
+            chips = cq.Shape(chips_shape)
+            
+            # 3.4 Classify Chips
+            volumes = chips.Solids() if chips.geomType() == "COMPOUND" else [chips]
+            
+            for v in volumes:
+                if v.Volume() < 1.0: continue # Skip micro-slivers and noise
+                
+                bbox = v.BoundingBox()
+                w_x = round(bbox.xmax - bbox.xmin, 2)
+                w_y = round(bbox.ymax - bbox.ymin, 2)
+                w_z = round(bbox.zmax - bbox.zmin, 2)
+                
                 c_pos = [round((bbox.xmin + bbox.xmax)/2, 3), 
                          round((bbox.ymin + bbox.ymax)/2, 3), 
                          round((bbox.zmin + bbox.zmax)/2, 3)]
-            except:
-                # If bounding box fails, try to just get a point on the surface
-                try:
-                    loc = f.Center()
-                    c_pos = [round(loc.x, 3), round(loc.y, 3), round(loc.z, 3)]
-                except:
-                    pass
+                         
+                faces = v.Faces()
+                chip_cyls = [f for f in faces if f.geomType() == "CYLINDER"]
                 
-            if geom_type == "CYLINDER":
-                try:
-                    surf = f._geomAdaptor().Cylinder()
+                if chip_cyls:
+                    # Get axis and radius from the largest cylinder
+                    largest_cyl = max(chip_cyls, key=lambda f: f.Area())
+                    surf = largest_cyl._geomAdaptor().Cylinder()
                     r = round(surf.Radius(), 3)
-                    axis = surf.Axis().Direction()
-                    dir_vec = [axis.X(), axis.Y(), axis.Z()]
+                    cyl_axis = surf.Axis().Direction()
+                    dir_vec = [cyl_axis.X(), cyl_axis.Y(), cyl_axis.Z()]
                     
                     # Normalize
                     mag = (dir_vec[0]**2 + dir_vec[1]**2 + dir_vec[2]**2)**0.5
-                    if mag > 0:
-                        dir_vec = [d/mag for d in dir_vec]
+                    if mag > 0: dir_vec = [d/mag for d in dir_vec]
                     
-                    # Calculate depth accurately from straight edges
-                    straight_edges = [e for e in f.Edges() if e.geomType() in ["LINE", "BSPLINE"]]
-                    if straight_edges:
-                        depth = max(e.Length() for e in straight_edges)
-                    else:
-                        depth = 10.0
+                    # Determine Depth based on the cylinder axis
+                    if abs(dir_vec[0]) > 0.99: depth = w_x; w = w_y; l = w_z
+                    elif abs(dir_vec[1]) > 0.99: depth = w_y; w = w_x; l = w_z
+                    else: depth = w_z; w = w_x; l = w_y
+                    
+                    if len(chip_cyls) == 1:
+                        if max(w, l) > r * 2.5: # Open U-Slot (long single cylinder)
+                            feat_type = "slot"
+                        else:
+                            feat_type = "drill"
+                    elif len(chip_cyls) == 2: # Regular closed Slot
+                        feat_type = "slot"
+                    else: # 3 or 4 cylinders -> Pocket
+                        feat_type = "pocket"
                         
-                    # Calculate true midpoint by projecting face center onto axis
-                    loc = surf.Location()
-                    try:
-                        pc = f.Center()
-                        vx, vy, vz = pc.x - loc.X(), pc.y - loc.Y(), pc.z - loc.Z()
-                        dist = vx*dir_vec[0] + vy*dir_vec[1] + vz*dir_vec[2]
-                        c_pos = [
-                            round(loc.X() + dir_vec[0]*dist, 3),
-                            round(loc.Y() + dir_vec[1]*dist, 3),
-                            round(loc.Z() + dir_vec[2]*dist, 3)
-                        ]
-                    except:
-                        pass # Fallback to c_pos from bbox
-                    
+                    # Fix direction for drills (point towards part)
+                    if feat_type == "drill":
+                        if c_pos[0] * dir_vec[0] + c_pos[1] * dir_vec[1] + c_pos[2] * dir_vec[2] > 0:
+                            dir_vec = [-d for d in dir_vec]
+                            
                     features.append({
-                        "id": f"face_{idx_counter}_CYL",
-                        "type": "drill",
+                        "id": f"{feat_type}_{idx_counter}",
+                        "type": feat_type,
                         "radius": r,
+                        "width": round(min(w, l), 1) if feat_type != "drill" else r*2,
+                        "length": round(max(w, l), 1) if feat_type != "drill" else r*2,
                         "depth": round(depth, 1),
                         "position": c_pos,
-                        "vector": dir_vec,
-                        "userNote": f"Raw Cylinder Face (r={r})"
+                        "vector": dir_vec
                     })
                     idx_counter += 1
-                except:
-                    pass
-            elif geom_type == "PLANE":
-                try:
-                    surf = f._geomAdaptor().Plane()
-                    axis = surf.Axis().Direction()
-                    dir_vec = [axis.X(), axis.Y(), axis.Z()]
+                else:
+                    # No cylinders -> Sharp pocket or cut
+                    if axis_name == "X": depth = w_x; w = w_y; l = w_z; dir_vec = [1,0,0]
+                    elif axis_name == "Y": depth = w_y; w = w_x; l = w_z; dir_vec = [0,1,0]
+                    else: depth = w_z; w = w_x; l = w_y; dir_vec = [0,0,1]
                     
-                    # Output as pocket for visualization
-                    # We map the width/length based on the normal
-                    if abs(dir_vec[0]) > 0.99:
-                        l = w_y
-                        w = w_z
-                    elif abs(dir_vec[1]) > 0.99:
-                        l = w_x
-                        w = w_z
-                    else:
-                        l = w_x
-                        w = w_y
-                        
                     features.append({
-                        "id": f"face_{idx_counter}_PLANE",
-                        "type": "pocket",
-                        "radius": 0, # Sharp
-                        "width": round(w, 1),
-                        "length": round(l, 1),
-                        "depth": 1, # Make it thin so it just renders as a surface
-                        "position": c_pos,
-                        "vector": dir_vec,
-                        "userNote": f"Raw Planar Face"
-                    })
-                    idx_counter += 1
-                except:
-                    pass
-            else:
-                try:
-                    features.append({
-                        "id": f"face_{idx_counter}_{geom_type}",
+                        "id": f"pocket_{idx_counter}",
                         "type": "pocket",
                         "radius": 0,
-                        "width": round(max(w_y, w_z), 1),
-                        "length": round(max(w_x, w_z), 1),
-                        "depth": 1,
+                        "width": round(min(w, l), 1),
+                        "length": round(max(w, l), 1),
+                        "depth": round(depth, 1),
                         "position": c_pos,
-                        "vector": [0, 0, 1],
-                        "userNote": f"Raw {geom_type} Face"
+                        "vector": dir_vec
                     })
                     idx_counter += 1
-                except:
-                    pass
                     
         # 4. Generate SVG Cross Section
         svg_opts = {
