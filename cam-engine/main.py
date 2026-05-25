@@ -97,9 +97,10 @@ def analyze_step(request: AnalyzeRequest):
             wp = cq.Workplane(cq.Plane(origin=tuple(origin), normal=tuple(extrusion_axis)))
             try:
                 section = wp.add(solid).section()
-                if section.vals():
-                    wires = sorted(section.vals(), key=lambda w: w.Length(), reverse=True)
-                    f = cq.Face.makeFromWires(wires[0], wires[1:])
+                wires = section.wires().vals()
+                if wires:
+                    wires_sorted = sorted(wires, key=lambda w: w.BoundingBox().DiagonalLength, reverse=True)
+                    f = cq.Face.makeFromWires(wires_sorted[0], wires_sorted[1:])
                     
                     # Project face to z=0 (or val=0) along extrusion axis
                     trsf = gp_Trsf()
