@@ -188,26 +188,28 @@ def analyze_step(request: AnalyzeRequest):
                     elif abs(dir_vec[1]) > 0.99: depth = w_y; w = w_x; l = w_z
                     else: depth = w_z; w = w_x; l = w_y
                     
-                    w, l = min(w, l), max(w, l)
+                    min_dim, max_dim = min(w, l), max(w, l)
+                    
+                    vol_ratio = v.Volume() / bbox_vol if bbox_vol > 0 else 0
                     
                     # Categorize based on dimensions and radius
                     if r > 0:
-                        if abs(w - 2*r) < 1.0: # Width matches diameter
-                            if abs(l - w) < 1.0: # Length matches width
+                        if abs(min_dim - 2*r) < 1.0: # Width matches diameter
+                            if abs(max_dim - min_dim) < 1.0: # Length matches width
                                 feat_type = "drill"
                             else:
                                 feat_type = "slot"
                         else:
-                            feat_type = "pocket" # Width is much larger than corner radius
+                            feat_type = "pocket" if vol_ratio > 0.85 else "contour"
                     else:
-                        feat_type = "pocket"
+                        feat_type = "pocket" if vol_ratio > 0.85 else "contour"
                         
                     features.append({
                         "id": f"{feat_type}_{idx_counter}",
                         "type": feat_type,
                         "radius": r,
-                        "width": round(min(w, l), 1) if feat_type != "drill" else r*2,
-                        "length": round(max(w, l), 1) if feat_type != "drill" else r*2,
+                        "width": round(w, 1) if feat_type != "drill" else r*2,
+                        "length": round(l, 1) if feat_type != "drill" else r*2,
                         "depth": round(depth, 1),
                         "position": c_pos,
                         "vector": dir_vec
@@ -220,14 +222,15 @@ def analyze_step(request: AnalyzeRequest):
                     elif axis_name == "Y": depth = w_y; w = w_x; l = w_z; dir_vec = [0,-1,0] if c_pos[1] > 0 else [0,1,0]
                     else: depth = w_z; w = w_x; l = w_y; dir_vec = [0,0,-1] if c_pos[2] > 0 else [0,0,1]
                     
-                    w, l = min(w, l), max(w, l)
+                    vol_ratio = v.Volume() / bbox_vol if bbox_vol > 0 else 0
+                    feat_type = "pocket" if vol_ratio > 0.85 else "contour"
                     
                     features.append({
-                        "id": f"pocket_{idx_counter}",
-                        "type": "pocket",
+                        "id": f"{feat_type}_{idx_counter}",
+                        "type": feat_type,
                         "radius": 0,
-                        "width": round(min(w, l), 1),
-                        "length": round(max(w, l), 1),
+                        "width": round(w, 1),
+                        "length": round(l, 1),
                         "depth": round(depth, 1),
                         "position": c_pos,
                         "vector": dir_vec
