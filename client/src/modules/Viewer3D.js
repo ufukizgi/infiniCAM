@@ -229,6 +229,45 @@ export class Viewer3D {
     });
   }
 
+  _createRoundedBoxGeometry(length, width, depth, radius) {
+    const shape = new THREE.Shape();
+    const w = length;
+    const h = width;
+    const x = -w / 2;
+    const y = -h / 2;
+    const r = Math.min(radius || 0, w / 2, h / 2);
+
+    if (r > 0) {
+      shape.moveTo(x + r, y);
+      shape.lineTo(x + w - r, y);
+      shape.quadraticCurveTo(x + w, y, x + w, y + r);
+      shape.lineTo(x + w, y + h - r);
+      shape.quadraticCurveTo(x + w, y + h, x + w - r, y + h);
+      shape.lineTo(x + r, y + h);
+      shape.quadraticCurveTo(x, y + h, x, y + h - r);
+      shape.lineTo(x, y + r);
+      shape.quadraticCurveTo(x, y, x + r, y);
+    } else {
+      shape.moveTo(x, y);
+      shape.lineTo(x + w, y);
+      shape.lineTo(x + w, y + h);
+      shape.lineTo(x, y + h);
+      shape.lineTo(x, y);
+    }
+
+    const extrudeSettings = {
+      depth: depth,
+      bevelEnabled: false,
+      curveSegments: 16
+    };
+
+    const geo = new THREE.ExtrudeGeometry(shape, extrudeSettings);
+    geo.translate(0, 0, -depth / 2);
+    geo.rotateX(-Math.PI / 2);
+    
+    return geo;
+  }
+
   highlightFeature(feat) {
     if (!this.scene || !this._modelGroup) return;
     
@@ -265,7 +304,7 @@ export class Viewer3D {
       const dy = feat.p2[1] - feat.p1[1];
       const dz = feat.p2[2] - feat.p1[2];
       
-      geo = new THREE.BoxGeometry(feat.length, feat.depth, feat.width);
+      geo = this._createRoundedBoxGeometry(feat.length, feat.width, feat.depth, feat.radius);
       mesh = new THREE.Mesh(geo, mat);
       
       const drillAxis = new THREE.Vector3(feat.vector[0], feat.vector[1], feat.vector[2]).normalize();
@@ -281,7 +320,7 @@ export class Viewer3D {
       mesh.setRotationFromMatrix(mat4);
       
     } else if (feat.type === 'pocket') {
-      geo = new THREE.BoxGeometry(feat.length, feat.depth, feat.width);
+      geo = this._createRoundedBoxGeometry(feat.length, feat.width, feat.depth, feat.radius);
       mesh = new THREE.Mesh(geo, mat);
       
       const drillAxis = new THREE.Vector3(feat.vector[0], feat.vector[1], feat.vector[2]).normalize();
