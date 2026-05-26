@@ -183,10 +183,13 @@ def analyze_step(request: AnalyzeRequest):
                     if c_pos[0] * dir_vec[0] + c_pos[1] * dir_vec[1] + c_pos[2] * dir_vec[2] > 0:
                         dir_vec = [-d for d in dir_vec]
                         
-                    # Determine width and length
-                    if abs(dir_vec[0]) > 0.99: depth = w_x; w = w_y; l = w_z
-                    elif abs(dir_vec[1]) > 0.99: depth = w_y; w = w_x; l = w_z
-                    else: depth = w_z; w = w_x; l = w_y
+                    # Determine width and length based on UI hardcoded axes mapping
+                    if abs(dir_vec[0]) > 0.99:
+                        depth = w_x; l = w_y; w = w_z
+                    elif abs(dir_vec[1]) > 0.99:
+                        depth = w_y; l = w_x; w = w_z
+                    else:
+                        depth = w_z; l = w_x; w = w_y
                     
                     min_dim, max_dim = min(w, l), max(w, l)
                     
@@ -200,40 +203,64 @@ def analyze_step(request: AnalyzeRequest):
                             else:
                                 feat_type = "slot"
                         else:
-                            feat_type = "pocket" if vol_ratio > 0.85 else "contour"
+                            feat_type = "pocket"
                     else:
-                        feat_type = "pocket" if vol_ratio > 0.85 else "contour"
+                        feat_type = "pocket"
+                        
+                    is_contour = False
+                    if feat_type == "pocket" and vol_ratio < 0.85:
+                        is_contour = True
+                        
+                    # Calculate p1 and p2 for slots
+                    p1, p2 = list(c_pos), list(c_pos)
+                    if feat_type == "slot":
+                        travel = (max_dim - min_dim) / 2.0
+                        if max_dim == w_x: p1[0] -= travel; p2[0] += travel
+                        elif max_dim == w_y: p1[1] -= travel; p2[1] += travel
+                        else: p1[2] -= travel; p2[2] += travel
+                        
+                    prefix = "contour" if is_contour else feat_type
                         
                     features.append({
-                        "id": f"{feat_type}_{idx_counter}",
+                        "id": f"{prefix}_{idx_counter}",
                         "type": feat_type,
                         "radius": r,
                         "width": round(w, 1) if feat_type != "drill" else r*2,
                         "length": round(l, 1) if feat_type != "drill" else r*2,
                         "depth": round(depth, 1),
                         "position": c_pos,
-                        "vector": dir_vec
+                        "vector": dir_vec,
+                        "p1": [round(x, 3) for x in p1],
+                        "p2": [round(x, 3) for x in p2]
                     })
                     idx_counter += 1
                 else:
-                    # No cylinders -> Sharp pocket or cut
-                    dir_vec = [0,0,1]
-                    if axis_name == "X": depth = w_x; w = w_y; l = w_z; dir_vec = [-1,0,0] if c_pos[0] > 0 else [1,0,0]
-                    elif axis_name == "Y": depth = w_y; w = w_x; l = w_z; dir_vec = [0,-1,0] if c_pos[1] > 0 else [0,1,0]
-                    else: depth = w_z; w = w_x; l = w_y; dir_vec = [0,0,-1] if c_pos[2] > 0 else [0,0,1]
+                    # Determine width and length based on UI mapping
+                    if axis_name == "X":
+                        depth = w_x; l = w_y; w = w_z
+                        dir_vec = [-1,0,0] if c_pos[0] > 0 else [1,0,0]
+                    elif axis_name == "Y":
+                        depth = w_y; l = w_x; w = w_z
+                        dir_vec = [0,-1,0] if c_pos[1] > 0 else [0,1,0]
+                    else:
+                        depth = w_z; l = w_x; w = w_y
+                        dir_vec = [0,0,-1] if c_pos[2] > 0 else [0,0,1]
                     
                     vol_ratio = v.Volume() / bbox_vol if bbox_vol > 0 else 0
-                    feat_type = "pocket" if vol_ratio > 0.85 else "contour"
+                    is_contour = vol_ratio < 0.85
+                    prefix = "contour" if is_contour else "pocket"
                     
                     features.append({
-                        "id": f"{feat_type}_{idx_counter}",
-                        "type": feat_type,
+                        "id": f"{prefix}_{idx_counter}",
+                        "type": "pocket",
                         "radius": 0,
                         "width": round(w, 1),
                         "length": round(l, 1),
                         "depth": round(depth, 1),
                         "position": c_pos,
-                        "vector": dir_vec
+                        "vector": dir_vec,
+                        "p1": c_pos,
+                        "p2": c_pos
                     })
                     idx_counter += 1
                     
