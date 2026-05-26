@@ -133,7 +133,14 @@ def analyze_step(request: AnalyzeRequest):
             chips = cq.Shape(chips_shape)
             
             # 3.4 Classify Chips
-            volumes = chips.Solids() if chips.geomType() == "COMPOUND" else [chips]
+            # OpenCASCADE may return a single Solid with multiple disconnected Shells instead of a Compound of Solids
+            volumes = []
+            for shell in chips.Shells():
+                try:
+                    vol_solid = cq.Solid.makeSolid(shell)
+                    volumes.append(vol_solid)
+                except:
+                    pass
             
             for v in volumes:
                 if v.Volume() < 1.0: continue # Skip micro-slivers and noise
