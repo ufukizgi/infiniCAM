@@ -171,32 +171,37 @@ def analyze_step(request: AnalyzeRequest):
                     surf = largest_cyl._geomAdaptor().Cylinder()
                     r = round(surf.Radius(), 3)
                     cyl_axis = surf.Axis().Direction()
-                    dir_vec = [cyl_axis.X(), cyl_axis.Y(), cyl_axis.Z()]
+                    c_dir = [cyl_axis.X(), cyl_axis.Y(), cyl_axis.Z()]
                     
                     # Normalize
-                    mag = (dir_vec[0]**2 + dir_vec[1]**2 + dir_vec[2]**2)**0.5
-                    if mag > 0: dir_vec = [d/mag for d in dir_vec]
+                    mag = (c_dir[0]**2 + c_dir[1]**2 + c_dir[2]**2)**0.5
+                    if mag > 0: c_dir = [d/mag for d in c_dir]
                     
-                    # Determine Depth based on the cylinder axis
+                    dir_vec = [round(c_dir[0], 3), round(c_dir[1], 3), round(c_dir[2], 3)]
+                    
+                    # Ensure direction points inwards
+                    if c_pos[0] * dir_vec[0] + c_pos[1] * dir_vec[1] + c_pos[2] * dir_vec[2] > 0:
+                        dir_vec = [-d for d in dir_vec]
+                        
+                    # Determine width and length
                     if abs(dir_vec[0]) > 0.99: depth = w_x; w = w_y; l = w_z
                     elif abs(dir_vec[1]) > 0.99: depth = w_y; w = w_x; l = w_z
                     else: depth = w_z; w = w_x; l = w_y
                     
-                    if len(chip_cyls) == 1:
-                        if max(w, l) > r * 2.5: # Open U-Slot (long single cylinder)
-                            feat_type = "slot"
+                    w, l = min(w, l), max(w, l)
+                    
+                    # Categorize based on dimensions and radius
+                    if r > 0:
+                        if abs(w - 2*r) < 1.0: # Width matches diameter
+                            if abs(l - w) < 1.0: # Length matches width
+                                feat_type = "drill"
+                            else:
+                                feat_type = "slot"
                         else:
-                            feat_type = "drill"
-                    elif len(chip_cyls) == 2: # Regular closed Slot
-                        feat_type = "slot"
-                    else: # 3 or 4 cylinders -> Pocket
+                            feat_type = "pocket" # Width is much larger than corner radius
+                    else:
                         feat_type = "pocket"
                         
-                    # Fix direction for drills (point towards part)
-                    if feat_type == "drill":
-                        if c_pos[0] * dir_vec[0] + c_pos[1] * dir_vec[1] + c_pos[2] * dir_vec[2] > 0:
-                            dir_vec = [-d for d in dir_vec]
-                            
                     features.append({
                         "id": f"{feat_type}_{idx_counter}",
                         "type": feat_type,
@@ -210,9 +215,12 @@ def analyze_step(request: AnalyzeRequest):
                     idx_counter += 1
                 else:
                     # No cylinders -> Sharp pocket or cut
-                    if axis_name == "X": depth = w_x; w = w_y; l = w_z; dir_vec = [1,0,0]
-                    elif axis_name == "Y": depth = w_y; w = w_x; l = w_z; dir_vec = [0,1,0]
-                    else: depth = w_z; w = w_x; l = w_y; dir_vec = [0,0,1]
+                    dir_vec = [0,0,1]
+                    if axis_name == "X": depth = w_x; w = w_y; l = w_z; dir_vec = [-1,0,0] if c_pos[0] > 0 else [1,0,0]
+                    elif axis_name == "Y": depth = w_y; w = w_x; l = w_z; dir_vec = [0,-1,0] if c_pos[1] > 0 else [0,1,0]
+                    else: depth = w_z; w = w_x; l = w_y; dir_vec = [0,0,-1] if c_pos[2] > 0 else [0,0,1]
+                    
+                    w, l = min(w, l), max(w, l)
                     
                     features.append({
                         "id": f"pocket_{idx_counter}",
