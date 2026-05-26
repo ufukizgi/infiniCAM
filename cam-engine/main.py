@@ -133,18 +133,22 @@ def analyze_step(request: AnalyzeRequest):
             chips = cq.Shape(chips_shape)
             
             # 3.4 Classify Chips
-            # OpenCASCADE may return a single Solid with multiple disconnected Shells instead of a Compound of Solids
-            volumes = []
-            for shell in chips.Shells():
-                try:
-                    vol_solid = cq.Solid.makeSolid(shell)
-                    volumes.append(vol_solid)
-                except:
-                    pass
+            raw_volumes = chips.Solids() if chips.geomType() == "COMPOUND" else [chips]
             
+            volumes = []
+            for rv in raw_volumes:
+                # OpenCASCADE often returns disjoint lumps as a single TopoDS_Solid
+                # We must split it by outer shells so each pocket is evaluated independently!
+                shells = rv.Shells()
+                for shell in shells:
+                    try:
+                        s = cq.Solid.makeSolid(shell)
+                        if s.Volume() > 1.0:
+                            volumes.append(s)
+                    except:
+                        pass
+                        
             for v in volumes:
-                if v.Volume() < 1.0: continue # Skip micro-slivers and noise
-                
                 bbox = v.BoundingBox()
                 w_x = round(bbox.xmax - bbox.xmin, 2)
                 w_y = round(bbox.ymax - bbox.ymin, 2)
