@@ -73,19 +73,21 @@ def analyze_step(request: AnalyzeRequest):
         features = []
         idx_counter = 0
         
-        # 3.1 Create Stock Profile by Fusing 31 Slices
+        # 3.1 Create Stock Profile by finding the most "intact" cross-section
         bounds = solid.BoundingBox()
         z_min, z_max = 0, 0
         if axis_name == "X": z_min, z_max = bounds.xmin, bounds.xmax
         elif axis_name == "Y": z_min, z_max = bounds.ymin, bounds.ymax
         else: z_min, z_max = bounds.zmin, bounds.zmax
 
-        from OCP.BRepAlgoAPI import BRepAlgoAPI_Fuse, BRepAlgoAPI_Cut
+        from OCP.BRepAlgoAPI import BRepAlgoAPI_Cut
         from OCP.gp import gp_Trsf, gp_Vec
         from OCP.BRepBuilderAPI import BRepBuilderAPI_Transform
         import math
 
-        fused_face = None
+        best_area = -1
+        best_face = None
+        best_val = 0
         
         for i in range(31):
             val = z_min + (z_max - z_min) * (i + 0.5) / 31.0
@@ -102,28 +104,23 @@ def analyze_step(request: AnalyzeRequest):
                     wires_sorted = sorted(wires, key=lambda w: w.BoundingBox().DiagonalLength, reverse=True)
                     f = cq.Face.makeFromWires(wires_sorted[0], wires_sorted[1:])
                     
-                    # Project face to z=0 (or val=0) along extrusion axis
-                    trsf = gp_Trsf()
-                    vec = [-origin[0], -origin[1], -origin[2]]
-                    trsf.SetTranslation(gp_Vec(*vec))
-                    moved_f = BRepBuilderAPI_Transform(f.wrapped, trsf, True).Shape()
-                    
-                    if fused_face is None:
-                        fused_face = moved_f
-                    else:
-                        fused_face = BRepAlgoAPI_Fuse(fused_face, moved_f).Shape()
+                    area = f.Area()
+                    if area > best_area:
+                        best_area = area
+                        best_face = f
+                        best_val = val
             except Exception as e:
                 pass
                 
-        if fused_face:
+        if best_face:
             # 3.2 Create 3D Stock Solid
-            base_face = cq.Face(fused_face)
-            
-            # Move the base face to z_min
+            # Project face from best_val to z_min
             trsf = gp_Trsf()
-            vec_min = [extrusion_axis[0]*z_min, extrusion_axis[1]*z_min, extrusion_axis[2]*z_min]
+            vec_min = [extrusion_axis[0]*(z_min - best_val), 
+                       extrusion_axis[1]*(z_min - best_val), 
+                       extrusion_axis[2]*(z_min - best_val)]
             trsf.SetTranslation(gp_Vec(*vec_min))
-            base_face = cq.Face(BRepBuilderAPI_Transform(base_face.wrapped, trsf, True).Shape())
+            base_face = cq.Face(BRepBuilderAPI_Transform(best_face.wrapped, trsf, True).Shape())
             
             # Extrude the face to full length
             extrude_vec = cq.Vector(extrusion_axis[0]*(z_max-z_min), extrusion_axis[1]*(z_max-z_min), extrusion_axis[2]*(z_max-z_min))
@@ -145,6 +142,10 @@ def analyze_step(request: AnalyzeRequest):
                 w_x = round(bbox.xmax - bbox.xmin, 2)
                 w_y = round(bbox.ymax - bbox.ymin, 2)
                 w_z = round(bbox.zmax - bbox.zmin, 2)
+                
+                bbox_vol = w_x * w_y * w_z
+                if bbox_vol > 0 and v.Volume() / bbox_vol < 0.05:
+                    continue # Skip paper-thin boolean artifacts (skins)
                 
                 c_pos = [round((bbox.xmin + bbox.xmax)/2, 3), 
                          round((bbox.ymin + bbox.ymax)/2, 3), 
