@@ -370,11 +370,13 @@ export function renderLibrary(container, initialFolderId = null) {
 
     dropZone.addEventListener('dragover', (e) => {
       e.preventDefault();
+      e.stopPropagation();
       dropZone.classList.add('drag-over');
     });
     dropZone.addEventListener('dragleave', () => dropZone.classList.remove('drag-over'));
     dropZone.addEventListener('drop', (e) => {
       e.preventDefault();
+      e.stopPropagation();
       dropZone.classList.remove('drag-over');
       const f = e.dataTransfer.files[0];
       if (f) selectFile(f);
@@ -391,6 +393,7 @@ export function renderLibrary(container, initialFolderId = null) {
         return;
       }
       selectedFile = f;
+      dropZone.style.display = 'none';
       overlay.querySelector('#modal-filename').textContent = f.name;
       overlay.querySelector('#modal-filesize').textContent = formatFileSize(f.size);
       overlay.querySelector('#modal-display-name').value = f.name.replace(/\.(stp|step)$/i, '');
@@ -544,6 +547,8 @@ export function renderLibrary(container, initialFolderId = null) {
     if (!isFile) return;
     
     e.preventDefault();
+    if (document.querySelector('.overlay')) return; // Prevent double modal
+
     const f = e.dataTransfer.files[0];
     if (f) {
       openUploadModal();
