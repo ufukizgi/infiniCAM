@@ -155,7 +155,7 @@ def analyze_step(request: AnalyzeRequest):
                 w_z = round(bbox.zmax - bbox.zmin, 2)
                 
                 bbox_vol = w_x * w_y * w_z
-                if bbox_vol > 0 and v.Volume() / bbox_vol < 0.05:
+                if bbox_vol > 0 and v.Volume() / bbox_vol < 0.05 and v.Volume() < 500:
                     continue # Skip paper-thin boolean artifacts (skins)
                 
                 c_pos = [round((bbox.xmin + bbox.xmax)/2, 3), 
@@ -213,11 +213,18 @@ def analyze_step(request: AnalyzeRequest):
                         
                     # Calculate p1 and p2 for slots
                     p1, p2 = list(c_pos), list(c_pos)
+                    w_out, l_out = w, l
                     if feat_type == "slot":
                         travel = (max_dim - min_dim) / 2.0
+                        w_out = min_dim
+                        l_out = max_dim
                         if max_dim == w_x: p1[0] -= travel; p2[0] += travel
                         elif max_dim == w_y: p1[1] -= travel; p2[1] += travel
                         else: p1[2] -= travel; p2[2] += travel
+                        
+                    elif feat_type == "drill":
+                        w_out = r*2
+                        l_out = r*2
                         
                     prefix = "contour" if is_contour else feat_type
                         
@@ -225,8 +232,8 @@ def analyze_step(request: AnalyzeRequest):
                         "id": f"{prefix}_{idx_counter}",
                         "type": feat_type,
                         "radius": r,
-                        "width": round(w, 1) if feat_type != "drill" else r*2,
-                        "length": round(l, 1) if feat_type != "drill" else r*2,
+                        "width": round(w_out, 1),
+                        "length": round(l_out, 1),
                         "depth": round(depth, 1),
                         "position": c_pos,
                         "vector": dir_vec,
@@ -245,22 +252,45 @@ def analyze_step(request: AnalyzeRequest):
                     else:
                         depth = w_z; l = w_x; w = w_y
                         dir_vec = [0,0,-1] if c_pos[2] > 0 else [0,0,1]
+                        
+                    max_area = 0
+                    cut_normal = None
+                    try:
+                        for face in v.Faces():
+                            if face.geomType() == "PLANE":
+                                area = face.Area()
+                                if area > max_area:
+                                    max_area = area
+                                    n = face._geomAdaptor().Plane().Axis().Direction()
+                                    cut_normal = [n.X(), n.Y(), n.Z()]
+                    except:
+                        pass
+                        
+                    is_angled_cut = False
+                    if cut_normal:
+                        dot = abs(cut_normal[0]*extrusion_axis[0] + cut_normal[1]*extrusion_axis[1] + cut_normal[2]*extrusion_axis[2])
+                        if 0.05 < dot < 0.95:
+                            is_angled_cut = True
+                            dir_vec = cut_normal
                     
                     vol_ratio = v.Volume() / bbox_vol if bbox_vol > 0 else 0
                     is_contour = vol_ratio < 0.85
-                    prefix = "contour" if is_contour else "pocket"
+                    
+                    prefix = "cut" if is_angled_cut else ("contour" if is_contour else "pocket")
+                    feat_type = "cut" if is_angled_cut else "pocket"
                     
                     features.append({
                         "id": f"{prefix}_{idx_counter}",
-                        "type": "pocket",
+                        "type": feat_type,
                         "radius": 0,
                         "width": round(w, 1),
                         "length": round(l, 1),
                         "depth": round(depth, 1),
+                        "area": round(max_area, 1),
                         "position": c_pos,
-                        "vector": dir_vec,
-                        "p1": c_pos,
-                        "p2": c_pos
+                        "vector": [round(x, 3) for x in dir_vec],
+                        "p1": [round(x, 3) for x in c_pos],
+                        "p2": [round(x, 3) for x in c_pos]
                     })
                     idx_counter += 1
                     
