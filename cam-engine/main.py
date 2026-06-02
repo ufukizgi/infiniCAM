@@ -168,13 +168,13 @@ def analyze_step(request: AnalyzeRequest):
                 for face in v.Faces():
                     if face.geomType() == "PLANE":
                         try:
-                            n = face._geomAdaptor().Plane().Axis().Direction()
-                            dot = abs(n.X()*extrusion_axis[0] + n.Y()*extrusion_axis[1] + n.Z()*extrusion_axis[2])
+                            n = face.normalAt(None)
+                            dot = abs(n.x*extrusion_axis[0] + n.y*extrusion_axis[1] + n.z*extrusion_axis[2])
                             if 0.05 < dot < 0.95:
-                                nx, ny, nz = round(abs(n.X()), 2), round(abs(n.Y()), 2), round(abs(n.Z()), 2)
+                                nx, ny, nz = round(abs(n.x), 2), round(abs(n.y), 2), round(abs(n.z), 2)
                                 key = (nx, ny, nz)
                                 if key not in angled_normals:
-                                    angled_normals[key] = [n.X(), n.Y(), n.Z()]
+                                    angled_normals[key] = [n.x, n.y, n.z]
                                 angled_areas[key] = angled_areas.get(key, 0) + face.Area()
                         except:
                             continue
