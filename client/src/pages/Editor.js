@@ -231,7 +231,8 @@ export async function renderEditor(container, partId) {
         } catch (e) { console.error('Failed to load SVG thumbnail', e); }
       }
       
-      renderOperationsList();
+      // Delay render until the function is defined (it's defined further down)
+      setTimeout(() => window.renderOperationsList(), 0);
     }
     
     renderTabContent();
