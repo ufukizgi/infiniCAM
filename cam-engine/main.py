@@ -209,9 +209,20 @@ def analyze_step(request: AnalyzeRequest):
                 faces = v.Faces()
                 chip_cyls = [f for f in faces if f.geomType() == "CYLINDER"]
                 
-                if chip_cyls:
-                    # Get axis and radius from the largest cylinder
-                    largest_cyl = max(chip_cyls, key=lambda f: f.Area())
+                valid_cyls = []
+                for cyl in chip_cyls:
+                    try:
+                        c_ax = cyl._geomAdaptor().Cylinder().Axis().Direction()
+                        dot = abs(c_ax.X()*extrusion_axis[0] + c_ax.Y()*extrusion_axis[1] + c_ax.Z()*extrusion_axis[2])
+                        # Ignore cylinders parallel to extrusion axis (like the pipe's main curved walls)
+                        if dot < 0.95:
+                            valid_cyls.append(cyl)
+                    except:
+                        pass
+                
+                if valid_cyls:
+                    # Get axis and radius from the largest valid cylinder
+                    largest_cyl = max(valid_cyls, key=lambda f: f.Area())
                     surf = largest_cyl._geomAdaptor().Cylinder()
                     r = round(surf.Radius(), 3)
                     cyl_axis = surf.Axis().Direction()
@@ -286,16 +297,31 @@ def analyze_step(request: AnalyzeRequest):
                     })
                     idx_counter += 1
                 else:
-                    # Determine width and length based on UI mapping
-                    if axis_name == "X":
-                        depth = w_x; l = w_y; w = w_z
-                        dir_vec = [-1,0,0] if c_pos[0] > 0 else [1,0,0]
-                    elif axis_name == "Y":
-                        depth = w_y; l = w_x; w = w_z
-                        dir_vec = [0,-1,0] if c_pos[1] > 0 else [0,1,0]
+                    # Fallback for sharp pockets: The tool direction is usually the shortest dimension perpendicular to extrusion
+                    dims = [(w_x, "X", [1,0,0]), (w_y, "Y", [0,1,0]), (w_z, "Z", [0,0,1])]
+                    valid_dims = []
+                    for w_val, ax_name, vec in dims:
+                        dot = abs(vec[0]*extrusion_axis[0] + vec[1]*extrusion_axis[1] + vec[2]*extrusion_axis[2])
+                        if dot < 0.95:
+                            valid_dims.append((w_val, ax_name, vec))
+                    
+                    if valid_dims:
+                        valid_dims.sort(key=lambda x: x[0])
+                        depth_val, depth_ax, base_vec = valid_dims[0]
+                        if c_pos[0]*base_vec[0] + c_pos[1]*base_vec[1] + c_pos[2]*base_vec[2] > 0:
+                            dir_vec = [-x for x in base_vec]
+                        else:
+                            dir_vec = base_vec
+                            
+                        if depth_ax == "X":
+                            depth = w_x; l = w_y; w = w_z
+                        elif depth_ax == "Y":
+                            depth = w_y; l = w_x; w = w_z
+                        else:
+                            depth = w_z; l = w_x; w = w_y
                     else:
                         depth = w_z; l = w_x; w = w_y
-                        dir_vec = [0,0,-1] if c_pos[2] > 0 else [0,0,1]
+                        dir_vec = [0,0,-1]
                     
                     vol_ratio = v.Volume() / bbox_vol if bbox_vol > 0 else 0
                     is_contour = vol_ratio < 0.85
