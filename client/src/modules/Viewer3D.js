@@ -329,20 +329,31 @@ export class Viewer3D {
       const zAxis = new THREE.Vector3().crossVectors(xAxis, yAxis).normalize();
       
       if (feat.polygon_3d && feat.polygon_3d.length > 2) {
-        const shape = new THREE.Shape();
-        const center = new THREE.Vector3(feat.position[0], feat.position[1], feat.position[2]);
-        feat.polygon_3d.forEach((pt, idx) => {
-          const v3 = new THREE.Vector3(pt[0], pt[1], pt[2]).sub(center);
-          const u = v3.dot(xAxis);
-          const v = v3.dot(zAxis);
-          if (idx === 0) shape.moveTo(u, v);
-          else shape.lineTo(u, v);
-        });
-        
-        geo = new THREE.ExtrudeGeometry(shape, { depth: feat.depth, bevelEnabled: false });
-        geo.translate(0, 0, -feat.depth / 2);
-        geo.rotateX(-Math.PI / 2);
+        console.log(`[Viewer3D] Rendering custom polygon for feature ${feat.id} with ${feat.polygon_3d.length} points.`);
+        try {
+          const shape = new THREE.Shape();
+          const center = new THREE.Vector3(feat.position[0], feat.position[1], feat.position[2]);
+          feat.polygon_3d.forEach((pt, idx) => {
+            const v3 = new THREE.Vector3(pt[0], pt[1], pt[2]).sub(center);
+            const u = v3.dot(xAxis);
+            const v = v3.dot(zAxis);
+            if (idx === 0) shape.moveTo(u, v);
+            else shape.lineTo(u, v);
+          });
+          
+          geo = new THREE.ExtrudeGeometry(shape, { depth: feat.depth, bevelEnabled: false });
+          geo.translate(0, 0, -feat.depth / 2);
+          geo.rotateX(-Math.PI / 2);
+        } catch (e) {
+          console.error(`[Viewer3D] Failed to extrude polygon for feature ${feat.id}:`, e);
+          geo = this._createRoundedBoxGeometry(feat.length, feat.width, feat.depth, feat.radius);
+        }
       } else {
+        if (feat.polygon_3d && feat.polygon_3d.length <= 2) {
+          console.warn(`[Viewer3D] Feature ${feat.id} has polygon_3d but too few points: ${feat.polygon_3d.length}`);
+        } else {
+          console.log(`[Viewer3D] Feature ${feat.id} has no polygon_3d. Falling back to rounded box.`);
+        }
         geo = this._createRoundedBoxGeometry(feat.length, feat.width, feat.depth, feat.radius);
       }
       

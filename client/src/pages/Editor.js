@@ -187,6 +187,94 @@ export async function renderEditor(container, partId) {
     bugModal.style.display = 'flex';
   };
 
+  // Operations List rendering (defined early to avoid async timing issues)
+  window.renderOperationsList = () => {
+    const opsList = document.getElementById('operations-list');
+    const countBadge = document.getElementById('op-count');
+    
+    const axisInfo = window.infinicam_axis;
+    const features = window.infinicam_features || [];
+    
+    if (countBadge) countBadge.textContent = features.length;
+    
+    if (!axisInfo) return;
+    
+    let opsHtml = \`
+      <div class="mb-4" style="background:var(--bg-3); padding:8px 12px; border-radius:var(--r-md); font-size:0.8rem;">
+        <div style="color:var(--text-muted); font-size:0.7rem; text-transform:uppercase; margin-bottom:4px;">Extrusion Axis</div>
+        <div class="flex items-center gap-2">
+          <span class="badge badge-cyan">\${axisInfo.name || 'Unknown'}</span>
+          <span style="font-family:var(--font-mono); color:var(--text-3);">[\${axisInfo.vector ? axisInfo.vector.join(', ') : '?'}]</span>
+        </div>
+      </div>
+    \`;
+    
+    if (features.length === 0) {
+      opsHtml += \`
+        <div class="empty-state" style="padding:20px 10px;">
+          <div class="empty-state-icon" style="font-size:1.5rem;">✨</div>
+          <p style="font-size:0.8rem;">No machining features detected.</p>
+        </div>
+      \`;
+    } else {
+      opsHtml += '<div class="flex-col gap-2">';
+      features.forEach((feat, i) => {
+        let icon = '⚙️';
+        let details = '';
+        if (feat.type === 'drill') {
+          icon = '🕳️';
+          details = \`Ø\${(feat.radius * 2).toFixed(1)} x \${feat.depth.toFixed(1)}mm\`;
+        } else if (feat.type === 'slot') {
+          icon = '🔲';
+          details = \`\${feat.width.toFixed(1)} x \${feat.length.toFixed(1)} x \${feat.depth.toFixed(1)}mm\`;
+        } else if (feat.type === 'pocket') {
+          icon = '🧊';
+          details = \`Pocket: \${feat.width.toFixed(1)} x \${feat.length.toFixed(1)} x \${feat.depth.toFixed(1)}mm (R\${feat.radius.toFixed(1)})\`;
+        } else if (feat.type === 'cut_angled' || feat.type === 'cut') {
+          icon = '📐';
+          details = \`Angled Saw Cut (Area: \${feat.area || 'N/A'})\`;
+        } else if (feat.type === 'cut_flat') {
+          icon = '🔪';
+          details = \`Flat End Cut (Area: \${feat.area || 'N/A'})\`;
+        }
+        
+        opsHtml += \`
+          <div style="background:var(--bg-1); border:1px solid var(--border); padding:10px; border-radius:var(--r-md); transition:border-color 0.2s;" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border)'">
+            <div class="flex items-center justify-between mb-1">
+              <div class="flex items-center gap-2" style="cursor:pointer;" onclick="if(window.viewer) window.viewer.highlightFeature(window.infinicam_features[\${i}])">
+                <span>\${icon}</span>
+                <span style="font-weight:600; font-size:0.85rem; text-transform:capitalize;">\${feat.type.replace('_', ' ')} OP \${i+1}</span>
+              </div>
+              <div class="flex items-center gap-1">
+                <button id="btn-ok-\${i}" class="btn btn-icon" style="padding:2px 6px; font-size:0.75rem; background:transparent; color:var(--success); border:1px solid var(--success); transition:all 0.2s;" onclick="window.toggleBugState(\${i}, false)" title="Mark as Correct">✔</button>
+                <button id="btn-bug-\${i}" class="btn btn-icon" style="padding:2px 6px; font-size:0.75rem; background:transparent; color:var(--danger); border:1px solid var(--danger); transition:all 0.2s;" onclick="window.toggleBugState(\${i}, true)" title="Report Incorrect">❌</button>
+              </div>
+            </div>
+            <div style="font-family:var(--font-mono); font-size:0.75rem; color:var(--text-muted); cursor:pointer;" onclick="if(window.viewer) window.viewer.highlightFeature(window.infinicam_features[\${i}])">
+              \${details}
+            </div>
+            <div style="font-family:var(--font-mono); font-size:0.7rem; color:var(--text-3); margin-top:4px;">
+              Pos: [\${feat.position ? feat.position.join(', ') : '?'}]
+            </div>
+            <div id="bug-note-container-\${i}" style="display:none; margin-top:8px;">
+              <input type="text" id="bug-note-input-\${i}" class="input" placeholder="Type a note (e.g., this is a slot)" style="font-size:0.75rem; padding:4px 8px; width:100%;" />
+            </div>
+          </div>
+        \`;
+      });
+      
+      opsHtml += \`
+        <button id="generate-report-btn" class="btn btn-danger" style="display:none; width:100%; margin-top:16px;" onclick="window.generateBugReport()">
+          📋 Generate Error Report
+        </button>
+      \`;
+      
+      opsHtml += '</div>';
+    }
+    
+    opsList.innerHTML = opsHtml;
+  };
+
   // Load part data
   try {
     const [partData, foldersData, annotationsData] = await Promise.all([
@@ -307,93 +395,6 @@ export async function renderEditor(container, partId) {
     }
   }
 
-  // Operations List rendering
-  window.renderOperationsList = () => {
-    const opsList = document.getElementById('operations-list');
-    const countBadge = document.getElementById('op-count');
-    
-    const axisInfo = window.infinicam_axis;
-    const features = window.infinicam_features || [];
-    
-    if (countBadge) countBadge.textContent = features.length;
-    
-    if (!axisInfo) return;
-    
-    let opsHtml = `
-      <div class="mb-4" style="background:var(--bg-3); padding:8px 12px; border-radius:var(--r-md); font-size:0.8rem;">
-        <div style="color:var(--text-muted); font-size:0.7rem; text-transform:uppercase; margin-bottom:4px;">Extrusion Axis</div>
-        <div class="flex items-center gap-2">
-          <span class="badge badge-cyan">${axisInfo.name || 'Unknown'}</span>
-          <span style="font-family:var(--font-mono); color:var(--text-3);">[${axisInfo.vector ? axisInfo.vector.join(', ') : '?'}]</span>
-        </div>
-      </div>
-    `;
-    
-    if (features.length === 0) {
-      opsHtml += `
-        <div class="empty-state" style="padding:20px 10px;">
-          <div class="empty-state-icon" style="font-size:1.5rem;">✨</div>
-          <p style="font-size:0.8rem;">No machining features detected.</p>
-        </div>
-      `;
-    } else {
-      opsHtml += '<div class="flex-col gap-2">';
-      features.forEach((feat, i) => {
-        let icon = '⚙️';
-        let details = '';
-        if (feat.type === 'drill') {
-          icon = '🕳️';
-          details = `Ø${(feat.radius * 2).toFixed(1)} x ${feat.depth.toFixed(1)}mm`;
-        } else if (feat.type === 'slot') {
-          icon = '🔲';
-          details = `${feat.width.toFixed(1)} x ${feat.length.toFixed(1)} x ${feat.depth.toFixed(1)}mm`;
-        } else if (feat.type === 'pocket') {
-          icon = '🧊';
-          details = `Pocket: ${feat.width.toFixed(1)} x ${feat.length.toFixed(1)} x ${feat.depth.toFixed(1)}mm (R${feat.radius.toFixed(1)})`;
-        } else if (feat.type === 'cut_angled' || feat.type === 'cut') {
-          icon = '📐';
-          details = `Angled Saw Cut (Area: ${feat.area || 'N/A'})`;
-        } else if (feat.type === 'cut_flat') {
-          icon = '🔪';
-          details = `Flat End Cut (Area: ${feat.area || 'N/A'})`;
-        }
-        
-        opsHtml += `
-          <div style="background:var(--bg-1); border:1px solid var(--border); padding:10px; border-radius:var(--r-md); transition:border-color 0.2s;" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border)'">
-            <div class="flex items-center justify-between mb-1">
-              <div class="flex items-center gap-2" style="cursor:pointer;" onclick="if(window.viewer) window.viewer.highlightFeature(window.infinicam_features[${i}])">
-                <span>${icon}</span>
-                <span style="font-weight:600; font-size:0.85rem; text-transform:capitalize;">${feat.type.replace('_', ' ')} OP ${i+1}</span>
-              </div>
-              <div class="flex items-center gap-1">
-                <button id="btn-ok-${i}" class="btn btn-icon" style="padding:2px 6px; font-size:0.75rem; background:transparent; color:var(--success); border:1px solid var(--success); transition:all 0.2s;" onclick="window.toggleBugState(${i}, false)" title="Mark as Correct">✔</button>
-                <button id="btn-bug-${i}" class="btn btn-icon" style="padding:2px 6px; font-size:0.75rem; background:transparent; color:var(--danger); border:1px solid var(--danger); transition:all 0.2s;" onclick="window.toggleBugState(${i}, true)" title="Report Incorrect">❌</button>
-              </div>
-            </div>
-            <div style="font-family:var(--font-mono); font-size:0.75rem; color:var(--text-muted); cursor:pointer;" onclick="if(window.viewer) window.viewer.highlightFeature(window.infinicam_features[${i}])">
-              ${details}
-            </div>
-            <div style="font-family:var(--font-mono); font-size:0.7rem; color:var(--text-3); margin-top:4px;">
-              Pos: [${feat.position ? feat.position.join(', ') : '?'}]
-            </div>
-            <div id="bug-note-container-${i}" style="display:none; margin-top:8px;">
-              <input type="text" id="bug-note-input-${i}" class="input" placeholder="Type a note (e.g., this is a slot)" style="font-size:0.75rem; padding:4px 8px; width:100%;" />
-            </div>
-          </div>
-        `;
-      });
-      
-      opsHtml += `
-        <button id="generate-report-btn" class="btn btn-danger" style="display:none; width:100%; margin-top:16px;" onclick="window.generateBugReport()">
-          📋 Generate Error Report
-        </button>
-      `;
-      
-      opsHtml += '</div>';
-    }
-    
-    opsList.innerHTML = opsHtml;
-  };
 
   // Analyze button
   document.getElementById('btn-analyze').disabled = false;
