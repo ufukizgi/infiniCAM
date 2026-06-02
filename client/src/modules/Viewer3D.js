@@ -81,6 +81,16 @@ export class Viewer3D {
     this._resizeObserver = new ResizeObserver(() => this._onResize());
     this._resizeObserver.observe(canvas.parentElement);
 
+    // Setup HUD Scene for Orientation Compass
+    this.hudScene = new THREE.Scene();
+    this.hudCamera = new THREE.PerspectiveCamera(45, 1, 0.1, 1000);
+    // Add intersecting arrows for X, Y, Z
+    const origin = new THREE.Vector3(0, 0, 0);
+    const arrowX = new THREE.ArrowHelper(new THREE.Vector3(1, 0, 0), origin, 15, 0xff0000, 4, 3);
+    const arrowY = new THREE.ArrowHelper(new THREE.Vector3(0, 1, 0), origin, 15, 0x00ff00, 4, 3);
+    const arrowZ = new THREE.ArrowHelper(new THREE.Vector3(0, 0, 1), origin, 15, 0x0088ff, 4, 3);
+    this.hudScene.add(arrowX, arrowY, arrowZ);
+
     // Animate
     this._animate();
   }
@@ -88,7 +98,27 @@ export class Viewer3D {
   _animate() {
     this._rafId = requestAnimationFrame(() => this._animate());
     this.controls.update();
+    
+    // Copy main camera rotation and position the HUD camera
+    this.hudCamera.position.copy(this.camera.position).sub(this.controls.target).normalize().multiplyScalar(50);
+    this.hudCamera.quaternion.copy(this.camera.quaternion);
+
+    const canvas = this.canvas;
+    const w = canvas.parentElement.clientWidth;
+    const h = canvas.parentElement.clientHeight;
+
+    this.renderer.autoClear = false;
+    this.renderer.clear();
+
+    // Render main scene
+    this.renderer.setViewport(0, 0, w, h);
     this.renderer.render(this.scene, this.camera);
+
+    // Render HUD in bottom left corner
+    const hudSize = 100;
+    this.renderer.clearDepth(); // Clear depth so axes overlay on top of everything
+    this.renderer.setViewport(10, 10, hudSize, hudSize);
+    this.renderer.render(this.hudScene, this.hudCamera);
   }
 
   _onResize() {
