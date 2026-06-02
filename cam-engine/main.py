@@ -308,17 +308,16 @@ def analyze_step(request: AnalyzeRequest):
                     best_bottom_face = None
                     best_bottom_area = 0
                     for f in v.Faces():
-                        if f.geomType() == "PLANE":
-                            try:
-                                n = f.normalAt(None)
-                                dot = abs(n.x*dir_vec[0] + n.y*dir_vec[1] + n.z*dir_vec[2])
-                                if dot > 0.99:
-                                    area = f.Area()
-                                    if area > best_bottom_area:
-                                        best_bottom_area = area
-                                        best_bottom_face = f
-                            except Exception as ex:
-                                debug_poly_err = f"normalAt error: {str(ex)}"
+                        try:
+                            n = f.normalAt(None)
+                            dot = abs(n.x*dir_vec[0] + n.y*dir_vec[1] + n.z*dir_vec[2])
+                            if dot > 0.5:
+                                area = f.Area()
+                                if area > best_bottom_area:
+                                    best_bottom_area = area
+                                    best_bottom_face = f
+                        except Exception as ex:
+                            debug_poly_err = f"normalAt error: {str(ex)}"
                     
                     if best_bottom_face:
                         try:
@@ -396,17 +395,16 @@ def analyze_step(request: AnalyzeRequest):
                     best_bottom_face = None
                     best_bottom_area = 0
                     for f in v.Faces():
-                        if f.geomType() == "PLANE":
-                            try:
-                                n = f.normalAt(None)
-                                dot = abs(n.x*dir_vec[0] + n.y*dir_vec[1] + n.z*dir_vec[2])
-                                if dot > 0.99:
-                                    area = f.Area()
-                                    if area > best_bottom_area:
-                                        best_bottom_area = area
-                                        best_bottom_face = f
-                            except Exception as ex:
-                                debug_poly_err = f"normalAt error: {str(ex)}"
+                        try:
+                            n = f.normalAt(None)
+                            dot = abs(n.x*dir_vec[0] + n.y*dir_vec[1] + n.z*dir_vec[2])
+                            if dot > 0.5:
+                                area = f.Area()
+                                if area > best_bottom_area:
+                                    best_bottom_area = area
+                                    best_bottom_face = f
+                        except Exception as ex:
+                            debug_poly_err = f"normalAt error: {str(ex)}"
                     
                     if best_bottom_face:
                         try:
