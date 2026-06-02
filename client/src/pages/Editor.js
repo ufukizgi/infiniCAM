@@ -22,6 +22,9 @@ export async function renderEditor(container, partId) {
           <button class="btn btn-secondary" id="btn-analyze" disabled>
             ⚡ Analyze Features
           </button>
+          <button class="btn btn-success" id="btn-save-features" style="display:none;">
+            💾 Save Features
+          </button>
           <button class="btn btn-primary" id="btn-generate" disabled>
             ⚙ Generate G-Code
           </button>
@@ -186,9 +189,10 @@ export async function renderEditor(container, partId) {
 
   // Load part data
   try {
-    const [partData, foldersData] = await Promise.all([
+    const [partData, foldersData, annotationsData] = await Promise.all([
       api.getPart(partId),
-      api.getFolders()
+      api.getFolders(),
+      api.getAnnotations(partId).catch(() => null)
     ]);
     part = partData;
     
@@ -212,6 +216,24 @@ export async function renderEditor(container, partId) {
     `;
 
     document.getElementById('status-text').textContent = part.displayName;
+    
+    // Load existing annotations if available
+    if (annotationsData && annotationsData.annotations && annotationsData.annotations.length > 0) {
+      window.infinicam_features = annotationsData.annotations;
+      window.infinicam_axis = annotationsData.extrusion_axis;
+      window.infinicam_bugs = {};
+      
+      // If we have an SVG thumbnail, load it to display in properties
+      if (part.hasThumbnail === 2 && part.thumbnailUrl) {
+        try {
+          const svgText = await fetch(part.thumbnailUrl).then(r => r.text());
+          window.infinicam_svg = svgText;
+        } catch (e) { console.error('Failed to load SVG thumbnail', e); }
+      }
+      
+      renderOperationsList();
+    }
+    
     renderTabContent();
   } catch (err) {
     toast.error('Failed to load part: ' + err.message);
@@ -284,12 +306,99 @@ export async function renderEditor(container, partId) {
     }
   }
 
-  // Analyze button (Faz 2)
+  // Operations List rendering
+  window.renderOperationsList = () => {
+    const opsList = document.getElementById('operations-list');
+    const countBadge = document.getElementById('op-count');
+    
+    const axisInfo = window.infinicam_axis;
+    const features = window.infinicam_features || [];
+    
+    if (countBadge) countBadge.textContent = features.length;
+    
+    if (!axisInfo) return;
+    
+    let opsHtml = `
+      <div class="mb-4" style="background:var(--bg-3); padding:8px 12px; border-radius:var(--r-md); font-size:0.8rem;">
+        <div style="color:var(--text-muted); font-size:0.7rem; text-transform:uppercase; margin-bottom:4px;">Extrusion Axis</div>
+        <div class="flex items-center gap-2">
+          <span class="badge badge-cyan">${axisInfo.name || 'Unknown'}</span>
+          <span style="font-family:var(--font-mono); color:var(--text-3);">[${axisInfo.vector ? axisInfo.vector.join(', ') : '?'}]</span>
+        </div>
+      </div>
+    `;
+    
+    if (features.length === 0) {
+      opsHtml += `
+        <div class="empty-state" style="padding:20px 10px;">
+          <div class="empty-state-icon" style="font-size:1.5rem;">✨</div>
+          <p style="font-size:0.8rem;">No machining features detected.</p>
+        </div>
+      `;
+    } else {
+      opsHtml += '<div class="flex-col gap-2">';
+      features.forEach((feat, i) => {
+        let icon = '⚙️';
+        let details = '';
+        if (feat.type === 'drill') {
+          icon = '🕳️';
+          details = `Ø${(feat.radius * 2).toFixed(1)} x ${feat.depth.toFixed(1)}mm`;
+        } else if (feat.type === 'slot') {
+          icon = '🔲';
+          details = `${feat.width.toFixed(1)} x ${feat.length.toFixed(1)} x ${feat.depth.toFixed(1)}mm`;
+        } else if (feat.type === 'pocket') {
+          icon = '🧊';
+          details = `Pocket: ${feat.width.toFixed(1)} x ${feat.length.toFixed(1)} x ${feat.depth.toFixed(1)}mm (R${feat.radius.toFixed(1)})`;
+        } else if (feat.type === 'cut_angled' || feat.type === 'cut') {
+          icon = '📐';
+          details = `Angled Saw Cut (Area: ${feat.area || 'N/A'})`;
+        } else if (feat.type === 'cut_flat') {
+          icon = '🔪';
+          details = `Flat End Cut (Area: ${feat.area || 'N/A'})`;
+        }
+        
+        opsHtml += `
+          <div style="background:var(--bg-1); border:1px solid var(--border); padding:10px; border-radius:var(--r-md); transition:border-color 0.2s;" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border)'">
+            <div class="flex items-center justify-between mb-1">
+              <div class="flex items-center gap-2" style="cursor:pointer;" onclick="if(window.viewer) window.viewer.highlightFeature(window.infinicam_features[${i}])">
+                <span>${icon}</span>
+                <span style="font-weight:600; font-size:0.85rem; text-transform:capitalize;">${feat.type.replace('_', ' ')} OP ${i+1}</span>
+              </div>
+              <div class="flex items-center gap-1">
+                <button id="btn-ok-${i}" class="btn btn-icon" style="padding:2px 6px; font-size:0.75rem; background:transparent; color:var(--success); border:1px solid var(--success); transition:all 0.2s;" onclick="window.toggleBugState(${i}, false)" title="Mark as Correct">✔</button>
+                <button id="btn-bug-${i}" class="btn btn-icon" style="padding:2px 6px; font-size:0.75rem; background:transparent; color:var(--danger); border:1px solid var(--danger); transition:all 0.2s;" onclick="window.toggleBugState(${i}, true)" title="Report Incorrect">❌</button>
+              </div>
+            </div>
+            <div style="font-family:var(--font-mono); font-size:0.75rem; color:var(--text-muted); cursor:pointer;" onclick="if(window.viewer) window.viewer.highlightFeature(window.infinicam_features[${i}])">
+              ${details}
+            </div>
+            <div style="font-family:var(--font-mono); font-size:0.7rem; color:var(--text-3); margin-top:4px;">
+              Pos: [${feat.position ? feat.position.join(', ') : '?'}]
+            </div>
+            <div id="bug-note-container-${i}" style="display:none; margin-top:8px;">
+              <input type="text" id="bug-note-input-${i}" class="input" placeholder="Type a note (e.g., this is a slot)" style="font-size:0.75rem; padding:4px 8px; width:100%;" />
+            </div>
+          </div>
+        `;
+      });
+      
+      opsHtml += `
+        <button id="generate-report-btn" class="btn btn-danger" style="display:none; width:100%; margin-top:16px;" onclick="window.generateBugReport()">
+          📋 Generate Error Report
+        </button>
+      `;
+      
+      opsHtml += '</div>';
+    }
+    
+    opsList.innerHTML = opsHtml;
+  };
+
+  // Analyze button
   document.getElementById('btn-analyze').disabled = false;
   document.getElementById('btn-analyze').addEventListener('click', async () => {
     const btn = document.getElementById('btn-analyze');
     const opsList = document.getElementById('operations-list');
-    const countBadge = document.getElementById('op-count');
     
     btn.disabled = true;
     btn.innerHTML = '<span class="spinner" style="width:14px;height:14px;border-width:2px;"></span> Analyzing...';
@@ -297,93 +406,24 @@ export async function renderEditor(container, partId) {
     try {
       const data = await api.analyze(partId);
       
-      toast.success('Feature recognition complete');
+      toast.success('Analysis complete. Please save if correct.');
       
       // Extract features and SVG
-      const axisInfo = data.extrusion_axis;
-      const features = data.features || [];
-      window.infinicam_svg = data.cross_section_svg;
-      window.infinicam_features = features; // Store globally for highlighting
-      window.infinicam_axis = axisInfo; // Store for bug report
+      window.infinicam_axis = data.extrusion_axis;
+      window.infinicam_features = data.features || [];
+      if (data.cross_section_svg) {
+        window.infinicam_svg = data.cross_section_svg;
+      }
       window.infinicam_bugs = {}; // Reset bugs
       
       // Force re-render of active tab to show SVG
       if (typeof renderTabContent === 'function') renderTabContent();
       
-      let opsHtml = `
-        <div class="mb-4" style="background:var(--bg-3); padding:8px 12px; border-radius:var(--r-md); font-size:0.8rem;">
-          <div style="color:var(--text-muted); font-size:0.7rem; text-transform:uppercase; margin-bottom:4px;">Extrusion Axis</div>
-          <div class="flex items-center gap-2">
-            <span class="badge badge-cyan">${axisInfo.name}</span>
-            <span style="font-family:var(--font-mono); color:var(--text-3);">[${axisInfo.vector.join(', ')}]</span>
-          </div>
-        </div>
-      `;
+      // Render operations list
+      window.renderOperationsList();
       
-      if (features.length === 0) {
-        opsHtml += `
-          <div class="empty-state" style="padding:20px 10px;">
-            <div class="empty-state-icon" style="font-size:1.5rem;">✨</div>
-            <p style="font-size:0.8rem;">No machining features detected.</p>
-          </div>
-        `;
-      } else {
-        opsHtml += '<div class="flex-col gap-2">';
-        features.forEach((feat, i) => {
-          let icon = '⚙️';
-          let details = '';
-          if (feat.type === 'drill') {
-            icon = '🕳️';
-            details = `Ø${(feat.radius * 2).toFixed(1)} x ${feat.depth.toFixed(1)}mm`;
-          } else if (feat.type === 'slot') {
-            icon = '🔲';
-            details = `${feat.width.toFixed(1)} x ${feat.length.toFixed(1)} x ${feat.depth.toFixed(1)}mm`;
-          } else if (feat.type === 'pocket') {
-            icon = '🧊';
-            details = `Pocket: ${feat.width.toFixed(1)} x ${feat.length.toFixed(1)} x ${feat.depth.toFixed(1)}mm (R${feat.radius.toFixed(1)})`;
-          } else if (feat.type === 'cut_angled') {
-            icon = '📐';
-            details = `Angled Saw Cut (Area: ${feat.area})`;
-          } else if (feat.type === 'cut_flat') {
-            icon = '🔪';
-            details = `Flat End Cut (Area: ${feat.area})`;
-          }
-          
-          opsHtml += `
-            <div style="background:var(--bg-1); border:1px solid var(--border); padding:10px; border-radius:var(--r-md); transition:border-color 0.2s;" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border)'">
-              <div class="flex items-center justify-between mb-1">
-                <div class="flex items-center gap-2" style="cursor:pointer;" onclick="if(window.viewer) window.viewer.highlightFeature(window.infinicam_features[${i}])">
-                  <span>${icon}</span>
-                  <span style="font-weight:600; font-size:0.85rem; text-transform:capitalize;">${feat.type.replace('_', ' ')} OP ${i+1}</span>
-                </div>
-                <div class="flex items-center gap-1">
-                  <button id="btn-ok-${i}" class="btn btn-icon" style="padding:2px 6px; font-size:0.75rem; background:transparent; color:var(--success); border:1px solid var(--success); transition:all 0.2s;" onclick="window.toggleBugState(${i}, false)" title="Mark as Correct">✔</button>
-                  <button id="btn-bug-${i}" class="btn btn-icon" style="padding:2px 6px; font-size:0.75rem; background:transparent; color:var(--danger); border:1px solid var(--danger); transition:all 0.2s;" onclick="window.toggleBugState(${i}, true)" title="Report Incorrect">❌</button>
-                </div>
-              </div>
-              <div style="font-family:var(--font-mono); font-size:0.75rem; color:var(--text-muted); cursor:pointer;" onclick="if(window.viewer) window.viewer.highlightFeature(window.infinicam_features[${i}])">
-                ${details}
-              </div>
-              <div style="font-family:var(--font-mono); font-size:0.7rem; color:var(--text-3); margin-top:4px;">
-                Pos: [${feat.position.join(', ')}]
-              </div>
-              <div id="bug-note-container-${i}" style="display:none; margin-top:8px;">
-                <input type="text" id="bug-note-input-${i}" class="input" placeholder="Type a note (e.g., this is a slot)" style="font-size:0.75rem; padding:4px 8px; width:100%;" />
-              </div>
-            </div>
-          `;
-        });
-        
-        opsHtml += `
-          <button id="generate-report-btn" class="btn btn-danger" style="display:none; width:100%; margin-top:16px;" onclick="window.generateBugReport()">
-            📋 Generate Error Report
-          </button>
-        `;
-        
-        opsHtml += '</div>';
-      }
-      
-      opsList.innerHTML = opsHtml;
+      // Show save button
+      document.getElementById('btn-save-features').style.display = 'inline-flex';
       
     } catch (err) {
       toast.error(err.message);
@@ -396,6 +436,28 @@ export async function renderEditor(container, partId) {
     } finally {
       btn.disabled = false;
       btn.innerHTML = '⚡ Analyze Features';
+    }
+  });
+
+  // Save Features button
+  document.getElementById('btn-save-features').addEventListener('click', async () => {
+    const btn = document.getElementById('btn-save-features');
+    btn.disabled = true;
+    btn.innerHTML = 'Saving...';
+    
+    try {
+      await api.saveAnnotations(partId, {
+        version: 1,
+        extrusion_axis: window.infinicam_axis,
+        annotations: window.infinicam_features
+      });
+      toast.success('Features saved successfully');
+      btn.style.display = 'none'; // Hide after successful save
+    } catch (err) {
+      toast.error('Failed to save features');
+    } finally {
+      btn.disabled = false;
+      btn.innerHTML = '💾 Save Features';
     }
   });
 

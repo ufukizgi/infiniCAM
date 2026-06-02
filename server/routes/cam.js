@@ -70,15 +70,6 @@ router.post('/:partId/analyze', async (req, res) => {
 
     const result = await response.json();
     
-    // Save features to .cam.json
-    const camJsonPath = storage.getFilePath(req.userId, req.params.partId, 'annotations.cam.json');
-    const annotations = {
-      version: 1,
-      extrusion_axis: result.extrusion_axis,
-      annotations: result.features || []
-    };
-    fs.writeFileSync(camJsonPath, JSON.stringify(annotations, null, 2));
-
     // Save SVG as thumbnail
     if (result.cross_section_svg) {
       storage.saveFile(req.userId, req.params.partId, 'thumbnail.svg', Buffer.from(result.cross_section_svg));
