@@ -75,6 +75,10 @@ def analyze_step(request: AnalyzeRequest):
         
         # 3.1 Create Stock Profile by finding the most "intact" cross-section
         bounds = solid.BoundingBox()
+        prof_w_x = bounds.xmax - bounds.xmin
+        prof_w_y = bounds.ymax - bounds.ymin
+        prof_w_z = bounds.zmax - bounds.zmin
+        
         z_min, z_max = 0, 0
         if axis_name == "X": z_min, z_max = bounds.xmin, bounds.xmax
         elif axis_name == "Y": z_min, z_max = bounds.ymin, bounds.ymax
@@ -182,11 +186,25 @@ def analyze_step(request: AnalyzeRequest):
                 is_angled_cut = False
                 cut_normal = None
                 max_angled_area = 0
-                for key, area in angled_areas.items():
-                    if area > 10.0 and area > max_angled_area:
-                        is_angled_cut = True
-                        cut_normal = angled_normals[key]
-                        max_angled_area = area
+                
+                # A true saw cut must span almost the entire profile in at least one cross-section dimension
+                is_full_span = False
+                if axis_name == "X":
+                    if w_y > prof_w_y * 0.85 or w_z > prof_w_z * 0.85: is_full_span = True
+                elif axis_name == "Y":
+                    if w_x > prof_w_x * 0.85 or w_z > prof_w_z * 0.85: is_full_span = True
+                else:
+                    if w_x > prof_w_x * 0.85 or w_y > prof_w_y * 0.85: is_full_span = True
+                
+                # It must also have a significant area
+                min_cut_area = max(10.0, best_area * 0.1)
+                
+                if is_full_span:
+                    for key, area in angled_areas.items():
+                        if area > min_cut_area and area > max_angled_area:
+                            is_angled_cut = True
+                            cut_normal = angled_normals[key]
+                            max_angled_area = area
                 
                 if is_angled_cut and cut_normal:
                     features.append({
