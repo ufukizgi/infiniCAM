@@ -336,7 +336,7 @@ export class Viewer3D {
           feat.polygon_3d.forEach((pt, idx) => {
             const v3 = new THREE.Vector3(pt[0], pt[1], pt[2]).sub(center);
             const u = v3.dot(xAxis);
-            const v = v3.dot(zAxis);
+            const v = -v3.dot(zAxis); // Negative because rotateX(-Math.PI/2) maps local Y to -Z
             if (idx === 0) shape.moveTo(u, v);
             else shape.lineTo(u, v);
           });
