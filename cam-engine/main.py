@@ -305,43 +305,63 @@ def analyze_step(request: AnalyzeRequest):
                     polygon_3d = []
                     debug_poly_err = None
                     
-                    best_bottom_face = None
-                    best_bottom_area = 0
+                    side_walls = []
                     for f in v.Faces():
                         try:
                             n = f.normalAt(None)
-                            dot = abs(n.x*dir_vec[0] + n.y*dir_vec[1] + n.z*dir_vec[2])
-                            if dot > 0.5:
-                                area = f.Area()
-                                if area > best_bottom_area:
-                                    best_bottom_area = area
-                                    best_bottom_face = f
-                        except Exception as ex:
-                            debug_poly_err = f"normalAt error: {str(ex)}"
-                    
-                    if best_bottom_face:
-                        try:
-                            from OCP.BRepTools import BRepTools_WireExplorer
-                            from OCP.TopAbs import TopAbs_REVERSED
-                            wire = best_bottom_face.outerWire()
-                            explorer = BRepTools_WireExplorer(wire.wrapped)
-                            while explorer.More():
-                                e = cq.Edge(explorer.Current())
-                                ori = e.wrapped.Orientation()
-                                num_samples = 2 if e.geomType() == "LINE" else 16
-                                if ori == TopAbs_REVERSED:
-                                    samples = [1.0 - (i / (num_samples - 1)) for i in range(num_samples)]
-                                else:
-                                    samples = [i / (num_samples - 1) for i in range(num_samples)]
+                            if abs(n.x*dir_vec[0] + n.y*dir_vec[1] + n.z*dir_vec[2]) < 0.1:
+                                side_walls.append(f)
+                        except:
+                            pass
+                            
+                    poly_edges = []
+                    for f in side_walls:
+                        for e in f.Edges():
+                            p1 = e.positionAt(0.0)
+                            p2 = e.positionAt(1.0)
+                            dx, dy, dz = p2.x - p1.x, p2.y - p1.y, p2.z - p1.z
+                            dist_dir = dx*dir_vec[0] + dy*dir_vec[1] + dz*dir_vec[2]
+                            if (dx*dx + dy*dy + dz*dz) - dist_dir*dist_dir > 0.01:
+                                poly_edges.append(e)
                                 
-                                for t in samples[:-1]:
-                                    pt = e.positionAt(t)
-                                    polygon_3d.append([round(pt.x, 3), round(pt.y, 3), round(pt.z, 3)])
-                                explorer.Next()
-                        except Exception as ex:
-                            debug_poly_err = f"WireExplorer error: {str(ex)}"
+                    edges_pool = list(poly_edges)
+                    loops = []
+                    while edges_pool:
+                        curr = edges_pool.pop(0)
+                        chained = [(curr, False)]
+                        last_pt = curr.positionAt(1.0)
+                        while edges_pool:
+                            found = False
+                            for i, e in enumerate(edges_pool):
+                                ep1, ep2 = e.positionAt(0.0), e.positionAt(1.0)
+                                if (last_pt - ep1).Length < 1e-3:
+                                    chained.append((e, False))
+                                    last_pt = ep2
+                                    edges_pool.pop(i)
+                                    found = True
+                                    break
+                                elif (last_pt - ep2).Length < 1e-3:
+                                    chained.append((e, True))
+                                    last_pt = ep1
+                                    edges_pool.pop(i)
+                                    found = True
+                                    break
+                            if not found:
+                                break
+                        first_pt = chained[0][0].positionAt(0.0) if not chained[0][1] else chained[0][0].positionAt(1.0)
+                        if (last_pt - first_pt).Length < 1e-3 and len(chained) >= 3:
+                            loops.append(chained)
+                            
+                    if loops:
+                        best_loop = max(loops, key=len)
+                        for e, rev in best_loop:
+                            num_s = 2 if e.geomType() == "LINE" else 16
+                            samples = [1.0 - (i/(num_s-1)) for i in range(num_s)] if rev else [i/(num_s-1) for i in range(num_s)]
+                            for t in samples[:-1]:
+                                pt = e.positionAt(t)
+                                polygon_3d.append([round(pt.x, 3), round(pt.y, 3), round(pt.z, 3)])
                     else:
-                        debug_poly_err = "best_bottom_face not found (no face with dot > 0.99)"
+                        debug_poly_err = "No closed loops found on side walls."
                         
                     features.append({
                         "id": f"{prefix}_{idx_counter}",
@@ -392,43 +412,63 @@ def analyze_step(request: AnalyzeRequest):
                     polygon_3d = []
                     debug_poly_err = None
                     
-                    best_bottom_face = None
-                    best_bottom_area = 0
+                    side_walls = []
                     for f in v.Faces():
                         try:
                             n = f.normalAt(None)
-                            dot = abs(n.x*dir_vec[0] + n.y*dir_vec[1] + n.z*dir_vec[2])
-                            if dot > 0.5:
-                                area = f.Area()
-                                if area > best_bottom_area:
-                                    best_bottom_area = area
-                                    best_bottom_face = f
-                        except Exception as ex:
-                            debug_poly_err = f"normalAt error: {str(ex)}"
-                    
-                    if best_bottom_face:
-                        try:
-                            from OCP.BRepTools import BRepTools_WireExplorer
-                            from OCP.TopAbs import TopAbs_REVERSED
-                            wire = best_bottom_face.outerWire()
-                            explorer = BRepTools_WireExplorer(wire.wrapped)
-                            while explorer.More():
-                                e = cq.Edge(explorer.Current())
-                                ori = e.wrapped.Orientation()
-                                num_samples = 2 if e.geomType() == "LINE" else 16
-                                if ori == TopAbs_REVERSED:
-                                    samples = [1.0 - (i / (num_samples - 1)) for i in range(num_samples)]
-                                else:
-                                    samples = [i / (num_samples - 1) for i in range(num_samples)]
+                            if abs(n.x*dir_vec[0] + n.y*dir_vec[1] + n.z*dir_vec[2]) < 0.1:
+                                side_walls.append(f)
+                        except:
+                            pass
+                            
+                    poly_edges = []
+                    for f in side_walls:
+                        for e in f.Edges():
+                            p1 = e.positionAt(0.0)
+                            p2 = e.positionAt(1.0)
+                            dx, dy, dz = p2.x - p1.x, p2.y - p1.y, p2.z - p1.z
+                            dist_dir = dx*dir_vec[0] + dy*dir_vec[1] + dz*dir_vec[2]
+                            if (dx*dx + dy*dy + dz*dz) - dist_dir*dist_dir > 0.01:
+                                poly_edges.append(e)
                                 
-                                for t in samples[:-1]: # drop last to avoid duplicates
-                                    pt = e.positionAt(t)
-                                    polygon_3d.append([round(pt.x, 3), round(pt.y, 3), round(pt.z, 3)])
-                                explorer.Next()
-                        except Exception as ex:
-                            debug_poly_err = f"WireExplorer error: {str(ex)}"
+                    edges_pool = list(poly_edges)
+                    loops = []
+                    while edges_pool:
+                        curr = edges_pool.pop(0)
+                        chained = [(curr, False)]
+                        last_pt = curr.positionAt(1.0)
+                        while edges_pool:
+                            found = False
+                            for i, e in enumerate(edges_pool):
+                                ep1, ep2 = e.positionAt(0.0), e.positionAt(1.0)
+                                if (last_pt - ep1).Length < 1e-3:
+                                    chained.append((e, False))
+                                    last_pt = ep2
+                                    edges_pool.pop(i)
+                                    found = True
+                                    break
+                                elif (last_pt - ep2).Length < 1e-3:
+                                    chained.append((e, True))
+                                    last_pt = ep1
+                                    edges_pool.pop(i)
+                                    found = True
+                                    break
+                            if not found:
+                                break
+                        first_pt = chained[0][0].positionAt(0.0) if not chained[0][1] else chained[0][0].positionAt(1.0)
+                        if (last_pt - first_pt).Length < 1e-3 and len(chained) >= 3:
+                            loops.append(chained)
+                            
+                    if loops:
+                        best_loop = max(loops, key=len)
+                        for e, rev in best_loop:
+                            num_s = 2 if e.geomType() == "LINE" else 16
+                            samples = [1.0 - (i/(num_s-1)) for i in range(num_s)] if rev else [i/(num_s-1) for i in range(num_s)]
+                            for t in samples[:-1]:
+                                pt = e.positionAt(t)
+                                polygon_3d.append([round(pt.x, 3), round(pt.y, 3), round(pt.z, 3)])
                     else:
-                        debug_poly_err = "best_bottom_face not found (no face with dot > 0.99)"
+                        debug_poly_err = "No closed loops found on side walls."
                         
                     features.append({
                         "id": f"{prefix}_{idx_counter}",
