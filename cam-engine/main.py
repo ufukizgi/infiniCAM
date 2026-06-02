@@ -300,6 +300,46 @@ def analyze_step(request: AnalyzeRequest):
                         l_out = r*2
                         
                     prefix = "contour" if is_contour else feat_type
+                    
+                    # Find bottom face to extract custom polygon shape
+                    polygon_3d = []
+                    
+                    best_bottom_face = None
+                    best_bottom_area = 0
+                    for f in v.Faces():
+                        if f.geomType() == "PLANE":
+                            try:
+                                n = f.normalAt(None)
+                                dot = abs(n.x*dir_vec[0] + n.y*dir_vec[1] + n.z*dir_vec[2])
+                                if dot > 0.99:
+                                    area = f.Area()
+                                    if area > best_bottom_area:
+                                        best_bottom_area = area
+                                        best_bottom_face = f
+                            except:
+                                pass
+                    
+                    if best_bottom_face:
+                        try:
+                            from OCP.BRepTools import BRepTools_WireExplorer
+                            from OCP.TopAbs import TopAbs_REVERSED
+                            wire = best_bottom_face.OuterWire()
+                            explorer = BRepTools_WireExplorer(wire.wrapped)
+                            while explorer.More():
+                                e = cq.Edge(explorer.Current())
+                                ori = e.wrapped.Orientation()
+                                num_samples = 2 if e.geomType() == "LINE" else 16
+                                if ori == TopAbs_REVERSED:
+                                    samples = [1.0 - (i / (num_samples - 1)) for i in range(num_samples)]
+                                else:
+                                    samples = [i / (num_samples - 1) for i in range(num_samples)]
+                                
+                                for t in samples[:-1]:
+                                    pt = e.positionAt(t)
+                                    polygon_3d.append([round(pt.x, 3), round(pt.y, 3), round(pt.z, 3)])
+                                explorer.Next()
+                        except:
+                            pass
                         
                     features.append({
                         "id": f"{prefix}_{idx_counter}",
@@ -311,7 +351,8 @@ def analyze_step(request: AnalyzeRequest):
                         "position": c_pos,
                         "vector": dir_vec,
                         "p1": [round(x, 3) for x in p1],
-                        "p2": [round(x, 3) for x in p2]
+                        "p2": [round(x, 3) for x in p2],
+                        "polygon_3d": polygon_3d
                     })
                     idx_counter += 1
                 else:
@@ -340,12 +381,50 @@ def analyze_step(request: AnalyzeRequest):
                     else:
                         depth = w_z; l = w_x; w = w_y
                         dir_vec = [0,0,-1]
-                    
                     vol_ratio = v.Volume() / bbox_vol if bbox_vol > 0 else 0
                     is_contour = vol_ratio < 0.85
-                    
                     prefix = "contour" if is_contour else "pocket"
                     
+                    # Find bottom face to extract custom polygon shape
+                    polygon_3d = []
+                    
+                    best_bottom_face = None
+                    best_bottom_area = 0
+                    for f in v.Faces():
+                        if f.geomType() == "PLANE":
+                            try:
+                                n = f.normalAt(None)
+                                dot = abs(n.x*dir_vec[0] + n.y*dir_vec[1] + n.z*dir_vec[2])
+                                if dot > 0.99:
+                                    area = f.Area()
+                                    if area > best_bottom_area:
+                                        best_bottom_area = area
+                                        best_bottom_face = f
+                            except:
+                                pass
+                    
+                    if best_bottom_face:
+                        try:
+                            from OCP.BRepTools import BRepTools_WireExplorer
+                            from OCP.TopAbs import TopAbs_REVERSED
+                            wire = best_bottom_face.OuterWire()
+                            explorer = BRepTools_WireExplorer(wire.wrapped)
+                            while explorer.More():
+                                e = cq.Edge(explorer.Current())
+                                ori = e.wrapped.Orientation()
+                                num_samples = 2 if e.geomType() == "LINE" else 16
+                                if ori == TopAbs_REVERSED:
+                                    samples = [1.0 - (i / (num_samples - 1)) for i in range(num_samples)]
+                                else:
+                                    samples = [i / (num_samples - 1) for i in range(num_samples)]
+                                
+                                for t in samples[:-1]: # drop last to avoid duplicates
+                                    pt = e.positionAt(t)
+                                    polygon_3d.append([round(pt.x, 3), round(pt.y, 3), round(pt.z, 3)])
+                                explorer.Next()
+                        except:
+                            pass
+                        
                     features.append({
                         "id": f"{prefix}_{idx_counter}",
                         "type": "pocket",
@@ -357,7 +436,8 @@ def analyze_step(request: AnalyzeRequest):
                         "position": c_pos,
                         "vector": [round(x, 3) for x in dir_vec],
                         "p1": [round(x, 3) for x in c_pos],
-                        "p2": [round(x, 3) for x in c_pos]
+                        "p2": [round(x, 3) for x in c_pos],
+                        "polygon_3d": polygon_3d
                     })
                     idx_counter += 1
                     
