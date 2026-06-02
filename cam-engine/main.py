@@ -303,6 +303,7 @@ def analyze_step(request: AnalyzeRequest):
                     
                     # Find bottom face to extract custom polygon shape
                     polygon_3d = []
+                    debug_poly_err = None
                     
                     best_bottom_face = None
                     best_bottom_area = 0
@@ -316,8 +317,8 @@ def analyze_step(request: AnalyzeRequest):
                                     if area > best_bottom_area:
                                         best_bottom_area = area
                                         best_bottom_face = f
-                            except:
-                                pass
+                            except Exception as ex:
+                                debug_poly_err = f"normalAt error: {str(ex)}"
                     
                     if best_bottom_face:
                         try:
@@ -338,8 +339,10 @@ def analyze_step(request: AnalyzeRequest):
                                     pt = e.positionAt(t)
                                     polygon_3d.append([round(pt.x, 3), round(pt.y, 3), round(pt.z, 3)])
                                 explorer.Next()
-                        except:
-                            pass
+                        except Exception as ex:
+                            debug_poly_err = f"WireExplorer error: {str(ex)}"
+                    else:
+                        debug_poly_err = "best_bottom_face not found (no face with dot > 0.99)"
                         
                     features.append({
                         "id": f"{prefix}_{idx_counter}",
@@ -352,7 +355,8 @@ def analyze_step(request: AnalyzeRequest):
                         "vector": dir_vec,
                         "p1": [round(x, 3) for x in p1],
                         "p2": [round(x, 3) for x in p2],
-                        "polygon_3d": polygon_3d
+                        "polygon_3d": polygon_3d,
+                        "debug_info": debug_poly_err
                     })
                     idx_counter += 1
                 else:
@@ -387,6 +391,7 @@ def analyze_step(request: AnalyzeRequest):
                     
                     # Find bottom face to extract custom polygon shape
                     polygon_3d = []
+                    debug_poly_err = None
                     
                     best_bottom_face = None
                     best_bottom_area = 0
@@ -400,8 +405,8 @@ def analyze_step(request: AnalyzeRequest):
                                     if area > best_bottom_area:
                                         best_bottom_area = area
                                         best_bottom_face = f
-                            except:
-                                pass
+                            except Exception as ex:
+                                debug_poly_err = f"normalAt error: {str(ex)}"
                     
                     if best_bottom_face:
                         try:
@@ -422,8 +427,10 @@ def analyze_step(request: AnalyzeRequest):
                                     pt = e.positionAt(t)
                                     polygon_3d.append([round(pt.x, 3), round(pt.y, 3), round(pt.z, 3)])
                                 explorer.Next()
-                        except:
-                            pass
+                        except Exception as ex:
+                            debug_poly_err = f"WireExplorer error: {str(ex)}"
+                    else:
+                        debug_poly_err = "best_bottom_face not found (no face with dot > 0.99)"
                         
                     features.append({
                         "id": f"{prefix}_{idx_counter}",
@@ -437,7 +444,8 @@ def analyze_step(request: AnalyzeRequest):
                         "vector": [round(x, 3) for x in dir_vec],
                         "p1": [round(x, 3) for x in c_pos],
                         "p2": [round(x, 3) for x in c_pos],
-                        "polygon_3d": polygon_3d
+                        "polygon_3d": polygon_3d,
+                        "debug_info": debug_poly_err
                     })
                     idx_counter += 1
                     
