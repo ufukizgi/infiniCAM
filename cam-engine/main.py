@@ -317,9 +317,9 @@ def analyze_step(request: AnalyzeRequest):
                     poly_edges = []
                     for f in side_walls:
                         for e in f.Edges():
-                            p1 = e.positionAt(0.0)
-                            p2 = e.positionAt(1.0)
-                            dx, dy, dz = p2.x - p1.x, p2.y - p1.y, p2.z - p1.z
+                            ep1 = e.positionAt(0.0)
+                            ep2 = e.positionAt(1.0)
+                            dx, dy, dz = ep2.x - ep1.x, ep2.y - ep1.y, ep2.z - ep1.z
                             dist_dir = dx*dir_vec[0] + dy*dir_vec[1] + dz*dir_vec[2]
                             if (dx*dx + dy*dy + dz*dz) - dist_dir*dist_dir > 0.01:
                                 poly_edges.append(e)
@@ -424,9 +424,9 @@ def analyze_step(request: AnalyzeRequest):
                     poly_edges = []
                     for f in side_walls:
                         for e in f.Edges():
-                            p1 = e.positionAt(0.0)
-                            p2 = e.positionAt(1.0)
-                            dx, dy, dz = p2.x - p1.x, p2.y - p1.y, p2.z - p1.z
+                            ep1 = e.positionAt(0.0)
+                            ep2 = e.positionAt(1.0)
+                            dx, dy, dz = ep2.x - ep1.x, ep2.y - ep1.y, ep2.z - ep1.z
                             dist_dir = dx*dir_vec[0] + dy*dir_vec[1] + dz*dir_vec[2]
                             if (dx*dx + dy*dy + dz*dz) - dist_dir*dist_dir > 0.01:
                                 poly_edges.append(e)
