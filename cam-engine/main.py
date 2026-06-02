@@ -324,7 +324,7 @@ def analyze_step(request: AnalyzeRequest):
                         try:
                             from OCP.BRepTools import BRepTools_WireExplorer
                             from OCP.TopAbs import TopAbs_REVERSED
-                            wire = best_bottom_face.OuterWire()
+                            wire = best_bottom_face.outerWire()
                             explorer = BRepTools_WireExplorer(wire.wrapped)
                             while explorer.More():
                                 e = cq.Edge(explorer.Current())
@@ -412,7 +412,7 @@ def analyze_step(request: AnalyzeRequest):
                         try:
                             from OCP.BRepTools import BRepTools_WireExplorer
                             from OCP.TopAbs import TopAbs_REVERSED
-                            wire = best_bottom_face.OuterWire()
+                            wire = best_bottom_face.outerWire()
                             explorer = BRepTools_WireExplorer(wire.wrapped)
                             while explorer.More():
                                 e = cq.Edge(explorer.Current())
