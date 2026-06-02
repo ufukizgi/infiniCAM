@@ -237,13 +237,20 @@ export async function renderEditor(container, partId) {
           icon = '🔪';
           details = `Flat End Cut (Area: ${feat.area || 'N/A'})`;
         }
-        
+        let unmilleableWarning = '';
+        if ((feat.type === 'pocket' || feat.type === 'contour' || feat.type === 'slot') && (!feat.radius || feat.radius < 0.001)) {
+          unmilleableWarning = `<span title="Keskin Köşe, Frezelenemez" style="cursor:help; color:var(--danger); font-size:1.1em;">❗</span>`;
+        }
+
         opsHtml += `
           <div style="background:var(--bg-1); border:1px solid var(--border); padding:10px; border-radius:var(--r-md); transition:border-color 0.2s;" onmouseover="this.style.borderColor='var(--primary)'" onmouseout="this.style.borderColor='var(--border)'">
             <div class="flex items-center justify-between mb-1">
               <div class="flex items-center gap-2" style="cursor:pointer;" onclick="if(window.viewer) window.viewer.highlightFeature(window.infinicam_features[${i}])">
                 <span>${icon}</span>
-                <span style="font-weight:600; font-size:0.85rem; text-transform:capitalize;">${feat.type.replace('_', ' ')} OP ${i+1}</span>
+                <div class="flex items-center gap-1">
+                  <span style="font-weight:600; font-size:0.85rem; text-transform:capitalize;">${feat.type.replace('_', ' ')} OP ${i+1}</span>
+                  ${unmilleableWarning}
+                </div>
               </div>
               <div class="flex items-center gap-1">
                 <button id="btn-ok-${i}" class="btn btn-icon" style="padding:2px 6px; font-size:0.75rem; background:transparent; color:var(--success); border:1px solid var(--success); transition:all 0.2s;" onclick="window.toggleBugState(${i}, false)" title="Mark as Correct">✔</button>

@@ -379,31 +379,50 @@ def analyze_step(request: AnalyzeRequest):
                     })
                     idx_counter += 1
                 else:
-                    # Fallback for sharp pockets: The tool direction is usually the shortest dimension perpendicular to extrusion
-                    dims = [(w_x, "X", [1,0,0]), (w_y, "Y", [0,1,0]), (w_z, "Z", [0,0,1])]
-                    valid_dims = []
-                    for w_val, ax_name, vec in dims:
-                        dot = abs(vec[0]*extrusion_axis[0] + vec[1]*extrusion_axis[1] + vec[2]*extrusion_axis[2])
-                        if dot < 0.95:
-                            valid_dims.append((w_val, ax_name, vec))
+                    # Robust dir_vec inference for sharp pockets
+                    candidate_dirs = []
+                    for e in v.Edges():
+                        if e.geomType() == "LINE":
+                            ep1, ep2 = e.positionAt(0.0), e.positionAt(1.0)
+                            d = ep2 - ep1
+                            if d.Length > 1e-5:
+                                d = d.normalized()
+                                found = False
+                                for c in candidate_dirs:
+                                    if abs(c.dot(d)) > 0.99:
+                                        found = True
+                                        break
+                                if not found:
+                                    candidate_dirs.append(d)
                     
-                    if valid_dims:
-                        valid_dims.sort(key=lambda x: x[0])
-                        depth_val, depth_ax, base_vec = valid_dims[0]
-                        if c_pos[0]*base_vec[0] + c_pos[1]*base_vec[1] + c_pos[2]*base_vec[2] > 0:
-                            dir_vec = [-x for x in base_vec]
-                        else:
-                            dir_vec = base_vec
+                    best_dir = None
+                    max_score = -1
+                    max_score_area = -1
+                    for d in candidate_dirs:
+                        score = 0
+                        area_score = 0
+                        for f in v.Faces():
+                            try:
+                                n = f.normalAt(None)
+                                if abs(n.dot(d)) < 0.1:
+                                    score += 1
+                                    area_score += f.Area()
+                            except:
+                                pass
+                        if score > max_score or (score == max_score and area_score > max_score_area):
+                            max_score = score
+                            max_score_area = area_score
+                            best_dir = d
                             
-                        if depth_ax == "X":
-                            depth = w_x; l = w_y; w = w_z
-                        elif depth_ax == "Y":
-                            depth = w_y; l = w_x; w = w_z
+                    if best_dir is not None:
+                        if c_pos[0]*best_dir.x + c_pos[1]*best_dir.y + c_pos[2]*best_dir.z < 0:
+                            dir_vec = [-best_dir.x, -best_dir.y, -best_dir.z]
                         else:
-                            depth = w_z; l = w_x; w = w_y
+                            dir_vec = [best_dir.x, best_dir.y, best_dir.z]
                     else:
-                        depth = w_z; l = w_x; w = w_y
                         dir_vec = [0,0,-1]
+                        
+                    depth = w_z; l = w_x; w = w_y
                     vol_ratio = v.Volume() / bbox_vol if bbox_vol > 0 else 0
                     is_contour = vol_ratio < 0.85
                     prefix = "contour" if is_contour else "pocket"
