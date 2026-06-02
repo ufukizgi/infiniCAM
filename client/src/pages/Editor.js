@@ -226,7 +226,7 @@ export async function renderEditor(container, partId) {
       // If we have an SVG thumbnail, load it to display in properties
       if (part.hasThumbnail === 2 && part.thumbnailUrl) {
         try {
-          const svgText = await fetch(part.thumbnailUrl).then(r => r.text());
+          const svgText = await fetch(api.getFileUrl(part.thumbnailUrl)).then(r => r.text());
           window.infinicam_svg = svgText;
         } catch (e) { console.error('Failed to load SVG thumbnail', e); }
       }
