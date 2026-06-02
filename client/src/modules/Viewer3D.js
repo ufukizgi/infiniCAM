@@ -335,15 +335,30 @@ export class Viewer3D {
       mesh.setRotationFromMatrix(mat4);
 
     } else if (feat.type.startsWith('cut')) {
-      const size = Math.sqrt(feat.area || 400) * 1.5;
+      const w = feat.width || 100;
+      const l = feat.length || 100;
+      const d = feat.depth || 100;
+      const size = Math.sqrt(w*w + l*l + d*d) * 1.2;
+      
       geo = new THREE.PlaneGeometry(size, size);
       mat.side = THREE.DoubleSide;
       mesh = new THREE.Mesh(geo, mat);
       
       const n = new THREE.Vector3(feat.vector[0], feat.vector[1], feat.vector[2]).normalize();
-      const z = new THREE.Vector3(0, 0, 1);
-      const quaternion = new THREE.Quaternion().setFromUnitVectors(z, n);
-      mesh.setRotationFromQuaternion(quaternion);
+      
+      let up = new THREE.Vector3(0, 1, 0);
+      if (Math.abs(n.y) > 0.99) {
+        up.set(1, 0, 0);
+      } else if (Math.abs(n.x) > 0.99) {
+        up.set(0, 0, 1);
+      }
+      
+      const localZ = n;
+      const localX = new THREE.Vector3().crossVectors(up, localZ).normalize();
+      const localY = new THREE.Vector3().crossVectors(localZ, localX).normalize();
+      
+      const mat4 = new THREE.Matrix4().makeBasis(localX, localY, localZ);
+      mesh.setRotationFromMatrix(mat4);
     }
     
     if (mesh) {
