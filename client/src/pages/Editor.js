@@ -239,7 +239,7 @@ export async function renderEditor(container, partId) {
         }
         let unmilleableWarning = '';
         if ((feat.type === 'pocket' || feat.type === 'contour' || feat.type === 'slot') && (!feat.radius || feat.radius < 0.001)) {
-          unmilleableWarning = `<span title="Keskin Köşe, Frezelenemez" style="cursor:help; color:var(--danger); font-size:1.1em;">❗</span>`;
+          unmilleableWarning = `<span title="Sharp Corner, Unmilleable" style="cursor:help; color:var(--danger); font-size:1.1em;">❗</span>`;
         }
 
         opsHtml += `
