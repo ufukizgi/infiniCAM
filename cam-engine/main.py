@@ -163,22 +163,32 @@ def analyze_step(request: AnalyzeRequest):
                          round((bbox.zmin + bbox.zmax)/2, 3)]
                 
                 # 1. First check for angled planar faces (e.g., 45-degree miter cuts)
-                max_angled_area = 0
-                cut_normal = None
-                try:
-                    for face in v.Faces():
-                        if face.geomType() == "PLANE":
+                angled_areas = {}
+                angled_normals = {}
+                for face in v.Faces():
+                    if face.geomType() == "PLANE":
+                        try:
                             n = face._geomAdaptor().Plane().Axis().Direction()
                             dot = abs(n.X()*extrusion_axis[0] + n.Y()*extrusion_axis[1] + n.Z()*extrusion_axis[2])
                             if 0.05 < dot < 0.95:
-                                area = face.Area()
-                                if area > max_angled_area:
-                                    max_angled_area = area
-                                    cut_normal = [n.X(), n.Y(), n.Z()]
-                except:
-                    pass
+                                nx, ny, nz = round(abs(n.X()), 2), round(abs(n.Y()), 2), round(abs(n.Z()), 2)
+                                key = (nx, ny, nz)
+                                if key not in angled_normals:
+                                    angled_normals[key] = [n.X(), n.Y(), n.Z()]
+                                angled_areas[key] = angled_areas.get(key, 0) + face.Area()
+                        except:
+                            continue
                 
-                if cut_normal and max_angled_area > 10.0:  # Must be a significant face to ignore chamfers
+                is_angled_cut = False
+                cut_normal = None
+                max_angled_area = 0
+                for key, area in angled_areas.items():
+                    if area > 10.0 and area > max_angled_area:
+                        is_angled_cut = True
+                        cut_normal = angled_normals[key]
+                        max_angled_area = area
+                
+                if is_angled_cut and cut_normal:
                     features.append({
                         "id": f"cut_{idx_counter}",
                         "type": "cut",
