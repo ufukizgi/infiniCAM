@@ -161,7 +161,41 @@ def analyze_step(request: AnalyzeRequest):
                 c_pos = [round((bbox.xmin + bbox.xmax)/2, 3), 
                          round((bbox.ymin + bbox.ymax)/2, 3), 
                          round((bbox.zmin + bbox.zmax)/2, 3)]
-                         
+                
+                # 1. First check for angled planar faces (e.g., 45-degree miter cuts)
+                max_angled_area = 0
+                cut_normal = None
+                try:
+                    for face in v.Faces():
+                        if face.geomType() == "PLANE":
+                            n = face._geomAdaptor().Plane().Axis().Direction()
+                            dot = abs(n.X()*extrusion_axis[0] + n.Y()*extrusion_axis[1] + n.Z()*extrusion_axis[2])
+                            if 0.05 < dot < 0.95:
+                                area = face.Area()
+                                if area > max_angled_area:
+                                    max_angled_area = area
+                                    cut_normal = [n.X(), n.Y(), n.Z()]
+                except:
+                    pass
+                
+                if cut_normal and max_angled_area > 10.0:  # Must be a significant face to ignore chamfers
+                    features.append({
+                        "id": f"cut_{idx_counter}",
+                        "type": "cut",
+                        "radius": 0,
+                        "width": round(w_x, 1),
+                        "length": round(w_y, 1),
+                        "depth": round(w_z, 1),
+                        "area": round(max_angled_area, 1),
+                        "position": c_pos,
+                        "vector": [round(x, 3) for x in cut_normal],
+                        "p1": [round(x, 3) for x in c_pos],
+                        "p2": [round(x, 3) for x in c_pos]
+                    })
+                    idx_counter += 1
+                    continue
+                
+                # 2. Check for cylinders
                 faces = v.Faces()
                 chip_cyls = [f for f in faces if f.geomType() == "CYLINDER"]
                 
@@ -252,41 +286,20 @@ def analyze_step(request: AnalyzeRequest):
                     else:
                         depth = w_z; l = w_x; w = w_y
                         dir_vec = [0,0,-1] if c_pos[2] > 0 else [0,0,1]
-                        
-                    max_area = 0
-                    cut_normal = None
-                    try:
-                        for face in v.Faces():
-                            if face.geomType() == "PLANE":
-                                area = face.Area()
-                                if area > max_area:
-                                    max_area = area
-                                    n = face._geomAdaptor().Plane().Axis().Direction()
-                                    cut_normal = [n.X(), n.Y(), n.Z()]
-                    except:
-                        pass
-                        
-                    is_angled_cut = False
-                    if cut_normal:
-                        dot = abs(cut_normal[0]*extrusion_axis[0] + cut_normal[1]*extrusion_axis[1] + cut_normal[2]*extrusion_axis[2])
-                        if 0.05 < dot < 0.95:
-                            is_angled_cut = True
-                            dir_vec = cut_normal
                     
                     vol_ratio = v.Volume() / bbox_vol if bbox_vol > 0 else 0
                     is_contour = vol_ratio < 0.85
                     
-                    prefix = "cut" if is_angled_cut else ("contour" if is_contour else "pocket")
-                    feat_type = "cut" if is_angled_cut else "pocket"
+                    prefix = "contour" if is_contour else "pocket"
                     
                     features.append({
                         "id": f"{prefix}_{idx_counter}",
-                        "type": feat_type,
+                        "type": "pocket",
                         "radius": 0,
                         "width": round(w, 1),
                         "length": round(l, 1),
                         "depth": round(depth, 1),
-                        "area": round(max_area, 1),
+                        "area": 0,
                         "position": c_pos,
                         "vector": [round(x, 3) for x in dir_vec],
                         "p1": [round(x, 3) for x in c_pos],
