@@ -29,7 +29,6 @@ export class Viewer3D {
     });
     this.renderer.setSize(w, h);
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-    this.renderer.shadowMap.enabled = true;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
     this.renderer.toneMappingExposure = 1.2;
     // Scene
@@ -55,7 +54,6 @@ export class Viewer3D {
 
     const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
     dirLight.position.set(200, 400, 200);
-    dirLight.castShadow = true;
     this.scene.add(dirLight);
 
     const fillLight = new THREE.DirectionalLight(0xffffff, 0.4);
@@ -206,8 +204,6 @@ export class Viewer3D {
       }
 
       const threeMesh = new THREE.Mesh(geo, material.clone());
-      threeMesh.castShadow = true;
-      threeMesh.receiveShadow = true;
       group.add(threeMesh);
     }
 
