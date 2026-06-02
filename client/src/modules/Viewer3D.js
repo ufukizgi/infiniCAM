@@ -320,9 +320,6 @@ export class Viewer3D {
       mesh.setRotationFromMatrix(mat4);
       
     } else if (feat.type === 'pocket') {
-      geo = this._createRoundedBoxGeometry(feat.length, feat.width, feat.depth, feat.radius);
-      mesh = new THREE.Mesh(geo, mat);
-      
       const drillAxis = new THREE.Vector3(feat.vector[0], feat.vector[1], feat.vector[2]).normalize();
       const travelAxis = new THREE.Vector3(1, 0, 0);
       if (Math.abs(drillAxis.dot(travelAxis)) > 0.9) travelAxis.set(0, 1, 0);
@@ -330,6 +327,26 @@ export class Viewer3D {
       const yAxis = drillAxis;
       const xAxis = travelAxis;
       const zAxis = new THREE.Vector3().crossVectors(xAxis, yAxis).normalize();
+      
+      if (feat.polygon_3d && feat.polygon_3d.length > 2) {
+        const shape = new THREE.Shape();
+        const center = new THREE.Vector3(feat.position[0], feat.position[1], feat.position[2]);
+        feat.polygon_3d.forEach((pt, idx) => {
+          const v3 = new THREE.Vector3(pt[0], pt[1], pt[2]).sub(center);
+          const u = v3.dot(xAxis);
+          const v = v3.dot(zAxis);
+          if (idx === 0) shape.moveTo(u, v);
+          else shape.lineTo(u, v);
+        });
+        
+        geo = new THREE.ExtrudeGeometry(shape, { depth: feat.depth, bevelEnabled: false });
+        geo.translate(0, 0, -feat.depth / 2);
+        geo.rotateX(-Math.PI / 2);
+      } else {
+        geo = this._createRoundedBoxGeometry(feat.length, feat.width, feat.depth, feat.radius);
+      }
+      
+      mesh = new THREE.Mesh(geo, mat);
       
       const mat4 = new THREE.Matrix4().makeBasis(xAxis, yAxis, zAxis);
       mesh.setRotationFromMatrix(mat4);
