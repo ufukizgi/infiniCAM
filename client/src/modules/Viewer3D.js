@@ -9,7 +9,7 @@ import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js';
 export class Viewer3D {
   constructor(canvas) {
     this.canvas = canvas;
-    this.wireframe = false;
+    this.showEdges = true;
     this.isDisposed = false;
     this._worker = null;
     this._initThree();
@@ -204,6 +204,14 @@ export class Viewer3D {
       }
 
       const threeMesh = new THREE.Mesh(geo, material.clone());
+      
+      const edgesGeo = new THREE.EdgesGeometry(geo, 15); // 15 degree threshold
+      const edgesMat = new THREE.LineBasicMaterial({ color: 0x000000, linewidth: 2 });
+      const edgesMesh = new THREE.LineSegments(edgesGeo, edgesMat);
+      edgesMesh.visible = this.showEdges;
+      edgesMesh.userData.isEdge = true;
+      threeMesh.add(edgesMesh);
+      
       group.add(threeMesh);
     }
 
@@ -239,13 +247,41 @@ export class Viewer3D {
     this.controls.update();
   }
 
-  toggleWireframe() {
-    this.wireframe = !this.wireframe;
+  toggleEdges() {
+    this.showEdges = !this.showEdges;
     if (this._modelGroup) {
       this._modelGroup.traverse(obj => {
-        if (obj.isMesh) obj.material.wireframe = this.wireframe;
+        if (obj.userData && obj.userData.isEdge) {
+          obj.visible = this.showEdges;
+        }
       });
     }
+  }
+
+  applyTransform(transform) {
+    if (!this._modelGroup || !transform) return;
+    
+    // Reset centering
+    this._modelGroup.position.set(0, 0, 0);
+    this._modelGroup.quaternion.identity();
+    
+    // Apply rotation
+    const axis = new THREE.Vector3(...transform.rotationAxis).normalize();
+    this._modelGroup.rotateOnWorldAxis(axis, THREE.MathUtils.degToRad(transform.rotationAngle));
+    
+    // Apply translation
+    this._modelGroup.position.add(new THREE.Vector3(...transform.translation));
+    
+    // Update camera to new bounding box
+    const box = new THREE.Box3().setFromObject(this._modelGroup);
+    const center = box.getCenter(new THREE.Vector3());
+    const size = box.getSize(new THREE.Vector3());
+    const maxDim = Math.max(size.x, size.y, size.z);
+    
+    const dist = maxDim * 2.0;
+    this.camera.position.set(center.x + dist * 0.7, center.y + dist * 0.5, center.z + dist * 0.7);
+    this.controls.target.copy(center);
+    this.controls.update();
   }
 
   async captureScreenshot() {
@@ -417,7 +453,14 @@ export class Viewer3D {
     
     if (mesh) {
       mesh.position.set(feat.position[0], feat.position[1], feat.position[2]);
-      this._modelGroup.add(mesh);
+      
+      // Ensure we have a separate group for features in the world space
+      if (!this._featuresGroup) {
+        this._featuresGroup = new THREE.Group();
+        this.scene.add(this._featuresGroup);
+      }
+      this._featuresGroup.add(mesh);
+      
       this.currentHighlight = mesh;
       
       if (this.controls) {

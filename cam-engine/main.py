@@ -63,6 +63,39 @@ def analyze_step(request: AnalyzeRequest):
         extrusion_axis_str = max(direction_lengths.items(), key=lambda x: x[1])[0]
         extrusion_axis = [float(x) for x in extrusion_axis_str.split(',')]
         
+        # --- ALIGNMENT TRANSFORMATION ---
+        import math
+        v1 = cq.Vector(*extrusion_axis)
+        v2 = cq.Vector(1, 0, 0)
+        angle = math.degrees(v1.getAngle(v2))
+        
+        rot_axis = [0, 1, 0]
+        if angle > 0.01:
+            axis = v1.cross(v2)
+            if axis.Length < 0.01:
+                axis = cq.Vector(0, 1, 0)
+            else:
+                axis = axis.normalized()
+            rot_axis = [axis.x, axis.y, axis.z]
+            solid = solid.rotate((0,0,0), tuple(rot_axis), angle)
+            
+        bounds = solid.val().BoundingBox()
+        dx = -bounds.xmin
+        dy = - (bounds.ymin + bounds.ymax) / 2
+        dz = - (bounds.zmin + bounds.zmax) / 2
+        
+        solid = solid.translate((dx, dy, dz))
+        
+        transform_data = {
+            "rotationAxis": rot_axis,
+            "rotationAngle": angle,
+            "translation": [dx, dy, dz]
+        }
+        
+        # After transformation, extrusion is perfectly aligned with X
+        extrusion_axis = [1.0, 0.0, 0.0]
+        # --------------------------------
+        
         # Determine X, Y, or Z axis mapping for clarity
         axis_name = "Unknown"
         if abs(extrusion_axis[0]) > 0.99: axis_name = "X"
@@ -626,6 +659,7 @@ def analyze_step(request: AnalyzeRequest):
                 "name": axis_name,
                 "vector": extrusion_axis
             },
+            "transform": transform_data,
             "features": features,
             "cross_section_svg": svg_str
         }
