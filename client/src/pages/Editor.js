@@ -55,7 +55,7 @@ export async function renderEditor(container, partId) {
           <canvas id="viewer-canvas" style="display:none;"></canvas>
           <div class="viewer-controls" id="viewer-controls" style="display:none;">
             <button class="btn btn-secondary btn-icon" id="btn-reset-cam" title="Reset camera">🎯</button>
-            <button class="btn btn-secondary btn-icon" id="btn-edges" title="Toggle edges">🔳</button>
+            <button class="btn btn-secondary btn-icon" id="btn-wireframe" title="Toggle Edges">🔲</button>
           </div>
         </div>
 
@@ -384,8 +384,9 @@ export async function renderEditor(container, partId) {
     // Viewer control buttons
     const btnReset = document.getElementById('btn-reset-cam');
     if (btnReset) btnReset.addEventListener('click', () => viewer.resetCamera());
-    const btnEdges = document.getElementById('btn-edges');
-    if (btnEdges) btnEdges.addEventListener('click', () => viewer.toggleEdges());
+    
+    const btnWire = document.getElementById('btn-wireframe');
+    if (btnWire) btnWire.addEventListener('click', () => viewer.toggleEdges());
 
   } catch (err) {
     if (err.message === 'Disposed') return; // Ignore intentional disposal
@@ -423,11 +424,6 @@ export async function renderEditor(container, partId) {
         window.infinicam_svg = data.cross_section_svg;
       }
       window.infinicam_bugs = {}; // Reset bugs
-      
-      // Apply alignment transform if provided by backend
-      if (data.transform) {
-        viewer.applyTransform(data.transform);
-      }
       
       // Force re-render of active tab to show SVG
       if (typeof renderTabContent === 'function') renderTabContent();
